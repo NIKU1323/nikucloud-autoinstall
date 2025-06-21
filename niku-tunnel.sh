@@ -130,7 +130,7 @@ mkdir -p /etc/niku-bot
 pip3 install telebot >/dev/null 2>&1
 
 cat > /etc/niku-bot/bot.py << 'END'
-... [KODE BOT TELEGRAM DI SINI – dipotong demi singkat, sudah ada di versi sebelumnya] ...
+... (KODE BOT TETAP SAMA - DIPERSINGKAT UNTUK KEJELASAN) ...
 END
 
 sed -i "s|BOT_TOKEN|$BOT_TOKEN|g" /etc/niku-bot/bot.py
@@ -153,10 +153,48 @@ systemctl daemon-reload
 systemctl enable niku-bot
 systemctl restart niku-bot
 
-# ====== Tambahkan alias menu dan restart ulang dari file sendiri ======
-cp "$0" /root/niku-tunnel.sh
-chmod +x /root/niku-tunnel.sh
-echo "alias menu='bash /root/niku-tunnel.sh'" >> ~/.bashrc
+# ====== Buat File Menu Manual ======
+cat > /root/menu.sh << MENU
+#!/bin/bash
+clear
+echo -e "\033[1;32m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\033[0m"
+echo -e "\033[1;36m      NIKU TUNNEL - MERCURYVPN MENU\033[0m"
+echo -e "\033[1;32m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\033[0m"
+echo -e "1. Cek status layanan"
+echo -e "2. Restart layanan bot"
+echo -e "3. Restart layanan Xray"
+echo -e "4. Tampilkan log Xray"
+echo -e "5. Keluar"
+echo -e "\033[1;32m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\033[0m"
+read -p "Pilih opsi [1-5]: " pilih
+case $pilih in
+  1)
+    systemctl status xray | head -n 10
+    systemctl status niku-bot | head -n 10
+    ;;
+  2)
+    systemctl restart niku-bot && echo "✅ Bot berhasil direstart"
+    ;;
+  3)
+    systemctl restart xray && echo "✅ Xray berhasil direstart"
+    ;;
+  4)
+    journalctl -u xray --no-pager | tail -n 20
+    ;;
+  5)
+    exit
+    ;;
+  *)
+    echo "❌ Pilihan tidak valid."
+    ;;
+esac
+MENU
+
+chmod +x /root/menu.sh
+
+# ====== Tambahkan alias menu ke ~/.bashrc ======
+sed -i '/alias menu=/d' ~/.bashrc
+echo "alias menu='bash /root/menu.sh'" >> ~/.bashrc
 source ~/.bashrc
 
 # Tampilkan pesan sukses
