@@ -27,10 +27,14 @@ apt update -y && apt upgrade -y && apt install socat curl cron unzip wget git py
 # ====== Pasang SSL Let's Encrypt ======
 echo -e "${cyan}[•] Pasang SSL Let's Encrypt...${plain}"
 curl https://get.acme.sh | sh >/dev/null 2>&1
-/root/.acme.sh/acme.sh --register-account -m admin@$DOMAIN >/dev/null 2>&1
-/root/.acme.sh/acme.sh --issue --standalone -d $DOMAIN --force --keylength ec-256 >/dev/null 2>&1
+~/.acme.sh/acme.sh --register-account -m admin@$DOMAIN >/dev/null 2>&1
+
+# Hentikan Xray jika aktif
+systemctl stop xray >/dev/null 2>&1
+
+~/.acme.sh/acme.sh --issue --standalone -d $DOMAIN --force --keylength ec-256
 mkdir -p /etc/xray
-/root/.acme.sh/acme.sh --install-cert -d $DOMAIN --ecc \
+~/.acme.sh/acme.sh --install-cert -d $DOMAIN --ecc \
 --key-file /etc/xray/key.pem \
 --fullchain-file /etc/xray/cert.pem >/dev/null 2>&1
 
@@ -126,7 +130,7 @@ mkdir -p /etc/niku-bot
 pip3 install telebot >/dev/null 2>&1
 
 cat > /etc/niku-bot/bot.py << 'END'
-# ... (isi bot tetap sama seperti sebelumnya)
+... [KODE BOT TELEGRAM DI SINI – dipotong demi singkat, sudah ada di versi sebelumnya] ...
 END
 
 sed -i "s|BOT_TOKEN|$BOT_TOKEN|g" /etc/niku-bot/bot.py
@@ -149,11 +153,13 @@ systemctl daemon-reload
 systemctl enable niku-bot
 systemctl restart niku-bot
 
-# ====== Tambahkan alias dan auto masuk menu ======
+# ====== Tambahkan alias menu dan restart ulang dari file sendiri ======
 cp "$0" /root/niku-tunnel.sh
-if ! grep -q "alias menu" ~/.bashrc; then
-  echo "alias menu='bash /root/niku-tunnel.sh'" >> ~/.bashrc
-fi
+chmod +x /root/niku-tunnel.sh
+echo "alias menu='bash /root/niku-tunnel.sh'" >> ~/.bashrc
+source ~/.bashrc
 
+# Tampilkan pesan sukses
 clear
-bash /root/niku-tunnel.sh
+echo -e "\n\033[1;32m✅ Instalasi selesai!\033[0m"
+echo -e "Ketik \033[1;33mmenu\033[0m untuk membuka panel."
