@@ -1,64 +1,22 @@
 #!/bin/bash
-# ======================================
-#             MENU UTAMA               
-# ======================================
 clear
-echo "========================================"
-echo "         MENU UTAMA - NIKU TUNNEL       "
-echo "========================================"
-echo "1. Menu SSH"
-echo "2. Menu VMESS"
-echo "3. Menu VLESS"
-echo "4. Menu TROJAN"
-echo "5. Tambah Domain + SSL"
-echo "6. Reboot VPS"
+echo "======================================="
+echo "          NIKU TUNNEL MENU"
+echo "======================================="
+echo "1. SSH Menu"
+echo "2. VMESS Menu"
+echo "3. VLESS Menu"
+echo "4. TROJAN Menu"
+echo "5. Add/Change Domain"
 echo "0. Keluar"
-echo "========================================"
+echo "======================================="
 read -p "Pilih opsi: " opt
-
 case $opt in
-1)
-  if [ -f /usr/bin/menussh.sh ]; then
-    bash /usr/bin/menussh.sh
-  else
-    echo "menussh.sh tidak ditemukan!"
-  fi
-  ;;
-2)
-  if [ -f /usr/bin/menuvmess.sh ]; then
-    bash /usr/bin/menuvmess.sh
-  else
-    echo "menuvmess.sh tidak ditemukan!"
-  fi
-  ;;
-3)
-  if [ -f /usr/bin/menuvless.sh ]; then
-    bash /usr/bin/menuvless.sh
-  else
-    echo "menuvless.sh tidak ditemukan!"
-  fi
-  ;;
-4)
-  if [ -f /usr/bin/menutrojan.sh ]; then
-    bash /usr/bin/menutrojan.sh
-  else
-    echo "menutrojan.sh tidak ditemukan!"
-  fi
-  ;;
-5)
-  if [ -f /usr/bin/add-domain.sh ]; then
-    bash /usr/bin/add-domain.sh
-  else
-    echo "add-domain.sh tidak ditemukan!"
-  fi
-  ;;
-6)
-  reboot
-  ;;
-0)
-  exit 0
-  ;;
-*)
-  echo "Pilihan tidak valid!"
-  ;;
+1) menussh ;;
+2) menuvmess ;;
+3) menuvless ;;
+4) menutrojan ;;
+5) add-domain ;;
+0) exit ;;
+*) echo "Opsi tidak valid!" && sleep 1 && menu ;;
 esac
