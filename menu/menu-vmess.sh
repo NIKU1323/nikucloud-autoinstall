@@ -1,95 +1,55 @@
 #!/bin/bash
+# VMESS MENU - NIKU TUNNEL / MERCURYVPN
+# Lokasi file: /root/menu/menu-vmess.sh
+
+RED='\e[31m'
+GREEN='\e[32m'
+YELLOW='\e[33m'
+CYAN='\e[36m'
+NC='\e[0m'
+
 clear
-echo "========= CREATE VMESS ACCOUNT ========="
-read -p "Username        : " user
-read -p "Masa aktif (hari): " masaaktif
-read -p "Limit IP         : " iplimit
-read -p "Limit Kuota (GB) : " kuota
+echo -e "${GREEN}┌──────────────────────────────────────────┐${NC}"
+echo -e "${GREEN}│           VMESS ACCOUNT MANAGER         │${NC}"
+echo -e "${GREEN}└──────────────────────────────────────────┘${NC}"
+echo -e "${YELLOW}┌──────────────────────────────────────────┐${NC}"
+echo -e "│  1. Create Vmess Account"
+echo -e "│  2. Trial Vmess Account"
+echo -e "│  3. Renew Vmess Account"
+echo -e "│  4. Delete Vmess Account"
+echo -e "│  5. Check Vmess Login"
+echo -e "│  6. List Vmess Member"
+echo -e "│  7. Delete Expired Vmess"
+echo -e "│  8. Backup Vmess Config"
+echo -e "│  9. Restore Vmess Config"
+echo -e "│ 10. ComeBack Menu"
+echo -e "└──────────────────────────────────────────┘${NC}"
+echo -ne "${YELLOW}Select From Options [ 1 - 10 ] : ${NC}"
+read opt
 
-uuid=$(cat /proc/sys/kernel/random/uuid)
-exp=$(date -d "$masaaktif days" +"%Y-%m-%d")
-domain=$(cat /etc/xray/domain)
-porttls=443
-path="/vmess"
-userconf="/etc/xray/vmess-$user.json"
-
-# Buat config
-cat > $userconf <<EOF
-{
-  "inbounds": [],
-  "outbounds": [],
-  "clients": [
-    {
-      "id": "$uuid",
-      "alterId": 0,
-      "email": "$user"
-    }
-  ]
-}
-EOF
-
-# Generate config xray
-cat > /etc/xray/config.json <<EOF
-{
-  "log": { "loglevel": "info" },
-  "inbounds": [{
-    "port": $porttls,
-    "protocol": "vmess",
-    "settings": {
-      "clients": [
-        {
-          "id": "$uuid",
-          "alterId": 0,
-          "email": "$user"
-        }
-      ]
-    },
-    "streamSettings": {
-      "network": "ws",
-      "wsSettings": {
-        "path": "$path"
-      },
-      "security": "tls",
-      "tlsSettings": {
-        "certificates": [
-          {
-            "certificateFile": "/etc/xray/xray.crt",
-            "keyFile": "/etc/xray/xray.key"
-          }
-        ]
-      }
-    }
-  }],
-  "outbounds": [{ "protocol": "freedom" }]
-}
-EOF
-
-# Restart service
-systemctl restart xray
-
-# Simpan data
-mkdir -p /etc/xray/quota /etc/xray/iplimit
-let "bytes = $kuota * 1024 * 1024 * 1024"
-echo "$bytes" > /etc/xray/quota/$user
-echo "$iplimit" > /etc/xray/iplimit/$user
-echo "$user $exp" >> /etc/xray/akun-vmess.conf
-
-# Config link
-link="vmess://$(echo -n "{\"v\":\"2\",\"ps\":\"$user\",\"add\":\"$domain\",\"port\":\"$porttls\",\"id\":\"$uuid\",\"aid\":\"0\",\"net\":\"ws\",\"path\":\"$path\",\"type\":\"none\",\"host\":\"$domain\",\"tls\":\"tls\"}" | base64 -w 0)"
-
-# Tampilkan hasil
-clear
-echo "===== VMESS ACCOUNT CREATED ====="
-echo "Username : $user"
-echo "Expired  : $exp"
-echo "Domain   : $domain"
-echo "Port TLS : $porttls"
-echo "ID       : $uuid"
-echo "Limit IP : $iplimit"
-echo "Kuota GB : $kuota"
-echo "Link     :"
-echo "$link"
-echo "================================="
-echo ""
-read -n 1 -s -r -p "Tekan tombol apapun untuk kembali..."
-menu
+case $opt in
+  1)
+    bash /root/menu/vmess/create.sh ;;
+  2)
+    bash /root/menu/vmess/trial.sh ;;
+  3)
+    bash /root/menu/vmess/renew.sh ;;
+  4)
+    bash /root/menu/vmess/delete.sh ;;
+  5)
+    bash /root/menu/vmess/cek-login.sh ;;
+  6)
+    bash /root/menu/vmess/list.sh ;;
+  7)
+    bash /root/menu/vmess/delete-expired.sh ;;
+  8)
+    bash /root/menu/vmess/backup.sh ;;
+  9)
+    bash /root/menu/vmess/restore.sh ;;
+  10)
+    bash /root/menu/menu.sh ;;
+  *)
+    echo -e "${RED}Opsi tidak tersedia.${NC}"
+    sleep 1
+    bash /root/menu/menu-vmess.sh ;;
+esac
