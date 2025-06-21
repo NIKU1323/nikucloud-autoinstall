@@ -130,7 +130,7 @@ mkdir -p /etc/niku-bot
 pip3 install telebot >/dev/null 2>&1
 
 cat > /etc/niku-bot/bot.py << 'END'
-... (KODE BOT TETAP SAMA - DIPERSINGKAT UNTUK KEJELASAN) ...
+# (Isi skrip Python bot disisipkan terpisah dan aman tanpa perintah chpasswd root)
 END
 
 sed -i "s|BOT_TOKEN|$BOT_TOKEN|g" /etc/niku-bot/bot.py
