@@ -11,7 +11,13 @@ MYIP=$(curl -s ipv4.icanhazip.com)
 mkdir -p /etc/niku
 
 # Input domain pointing ke VPS
-read -rp "Masukkan domain (yang sudah dipointing ke IP VPS ini): " domain
+if [ -t 1 ]; then
+    read -ep "Masukkan domain (yang sudah dipointing ke IP VPS ini): " domain
+else
+    echo -n "Masukkan domain (yang sudah dipointing ke IP VPS ini): "
+    read domain
+fi
+
 domain_ip=$(ping -c1 "$domain" | grep -oP '(\d{1,3}\.){3}\d{1,3}' | head -n1)
 
 if [[ "$domain_ip" != "$MYIP" ]]; then
@@ -23,26 +29,20 @@ if [[ "$domain_ip" != "$MYIP" ]]; then
   exit 1
 fi
 
-# Simpan domain
 echo "$domain" > /etc/niku/domain
 
-# Install dependensi SSL CE
-apt update -y
-apt install -y socat netcat curl cron gnupg
+# Update dan install dependensi dasar
+apt update -y && apt upgrade -y
+apt install -y socat netcat curl cron gnupg screen nginx git unzip python3 python3-pip python3-venv dropbear squid haproxy openvpn
 
-# Install acme.sh
+# Install acme.sh dan issue sertifikat SSL
 curl https://acme-install.netlify.app/acme.sh -o acme.sh && bash acme.sh && rm acme.sh
-
-# Issue SSL cert
 ~/.acme.sh/acme.sh --issue --standalone -d "$domain" --force
 ~/.acme.sh/acme.sh --install-cert -d "$domain" \
 --fullchain-file /etc/xray/xray.crt \
 --key-file /etc/xray/xray.key
 
-# Install software VPN lainnya
-apt install -y nginx git screen unzip python3 python3-pip python3-venv dropbear squid haproxy openvpn
-
-# Setup allowed.json
+# Setup allowed.json di Nginx
 mkdir -p /var/www/html
 echo "[\"$MYIP\"]" > /var/www/html/allowed.json
 chmod 644 /var/www/html/allowed.json
@@ -58,8 +58,7 @@ server {
 EOF
 systemctl restart nginx
 
-# Validasi IP allowed.json
-sleep 2
+# Validasi IP dari allowed.json
 TRIES=5
 while [[ $TRIES -gt 0 ]]; do
   IZIN=$(curl -s http://127.0.0.1/allowed.json | grep -w "$MYIP")
@@ -79,10 +78,7 @@ wget -O /usr/bin/badvpn-udpgw https://raw.githubusercontent.com/NIKU1323/nikuclo
 chmod +x /usr/bin/badvpn-udpgw
 screen -dmS badvpn /usr/bin/badvpn-udpgw --listen-addr 127.0.0.1:7100
 
-# Install Xray Core
-bash <(curl -s https://raw.githubusercontent.com/XTLS/Xray-install/main/install-release.sh)
-
-# Setup rc.local
+# Pasang rc.local untuk auto-run BadVPN
 cat <<EOF >/etc/rc.local
 #!/bin/sh -e
 screen -dmS badvpn /usr/bin/badvpn-udpgw --listen-addr 127.0.0.1:7100
@@ -92,7 +88,10 @@ chmod +x /etc/rc.local
 systemctl enable rc-local
 systemctl start rc-local
 
-# Menu CLI
+# Install Xray Core
+bash <(curl -s https://raw.githubusercontent.com/XTLS/Xray-install/main/install-release.sh)
+
+# Download menu VPN
 mkdir -p /root/menu/
 cd /root/menu/
 wget -q https://raw.githubusercontent.com/NIKU1323/nikucloud-autoinstall/main/menu/menu.sh
@@ -102,10 +101,11 @@ wget -q https://raw.githubusercontent.com/NIKU1323/nikucloud-autoinstall/main/me
 wget -q https://raw.githubusercontent.com/NIKU1323/nikucloud-autoinstall/main/menu/menu-trojan.sh
 wget -q https://raw.githubusercontent.com/NIKU1323/nikucloud-autoinstall/main/menu/add-domain.sh
 chmod +x /root/menu/*
+rm -f /usr/bin/menu
 ln -s /root/menu/menu.sh /usr/bin/menu
 chmod +x /usr/bin/menu
 
-# Telegram Bot
+# Install Bot Telegram
 mkdir -p /root/bot/
 cd /root/bot/
 
@@ -204,8 +204,7 @@ clear
 echo "=========================================="
 echo "      INSTALASI SELESAI ✅                "
 echo " Jalankan menu: menu                      "
-echo " Bot Telegram aktif dan berjalan otomatis "
+echo " Bot Telegram aktif via systemctl         "
 echo "=========================================="
 read -p "Reboot sekarang? (y/n): " rebootnow
 [[ $rebootnow == "y" || $rebootnow == "Y" ]] && reboot
-
