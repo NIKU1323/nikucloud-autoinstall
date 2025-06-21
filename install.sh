@@ -10,14 +10,13 @@ echo "=========================================="
 MYIP=$(curl -s ipv4.icanhazip.com)
 mkdir -p /etc/niku
 
-echo "[ CHECKING IP AUTHORIZATION... ]"
+# Install Nginx dan buat allowed.json
+apt update -y && apt install -y nginx curl socat git screen cron net-tools unzip python3 python3-pip python3-venv dropbear squid haproxy openvpn
 
-# Buat allowed.json otomatis
 mkdir -p /var/www/html
 echo "[\"$MYIP\"]" > /var/www/html/allowed.json
+chmod 644 /var/www/html/allowed.json
 
-# Install Nginx dan validasi IP
-apt update -y && apt install -y nginx
 cat <<EOF >/etc/nginx/sites-enabled/default
 server {
     listen 80 default_server;
@@ -29,28 +28,35 @@ server {
 EOF
 systemctl restart nginx
 
-# Cek izin IP (localhost nginx)
-IZIN=$(curl -s http://127.0.0.1/allowed.json | grep -w "$MYIP")
+# Cek izin IP (retry 5x max)
+sleep 2
+echo "[ VALIDATING ALLOWED IP... ]"
+TRIES=5
+while [[ $TRIES -gt 0 ]]; do
+  IZIN=$(curl -s http://127.0.0.1/allowed.json | grep -w "$MYIP")
+  [[ $IZIN != "" ]] && break
+  echo "Retrying access check..."
+  sleep 1
+  TRIES=$((TRIES - 1))
+done
+
 if [[ $IZIN == "" ]]; then
     echo "[ ACCESS DENIED - IP NOT REGISTERED ]"
     exit 1
 fi
-
-# Install dasar
-apt install -y curl socat git screen cron net-tools unzip python3 python3-pip python3-venv dropbear squid haproxy openvpn
 
 # Install BadVPN
 wget -O /usr/bin/badvpn-udpgw https://github.com/ambrop72/badvpn/releases/download/v1.999.130/badvpn-udpgw
 chmod +x /usr/bin/badvpn-udpgw
 screen -dmS badvpn /usr/bin/badvpn-udpgw --listen-addr 127.0.0.1:7100
 
-# Install Xray
+# Install Xray Core
 bash <(curl -s https://raw.githubusercontent.com/XTLS/Xray-install/main/install-release.sh)
 
-# Install ACME SSL
+# Install SSL ACME
 curl https://acme-install.netlify.app/acme.sh -o acme.sh && bash acme.sh && rm acme.sh
 
-# Setup rc.local untuk badvpn
+# Setup rc.local
 cat <<EOF >/etc/rc.local
 #!/bin/sh -e
 screen -dmS badvpn /usr/bin/badvpn-udpgw --listen-addr 127.0.0.1:7100
@@ -60,26 +66,23 @@ chmod +x /etc/rc.local
 systemctl enable rc-local
 systemctl start rc-local
 
-# Clone file menu
+# Menu system
 mkdir -p /root/menu/
 cd /root/menu/
 wget -q https://raw.githubusercontent.com/NIKU1323/nikucloud-autoinstall/main/menu/menu.sh
 wget -q https://raw.githubusercontent.com/NIKU1323/nikucloud-autoinstall/main/menu/menu-ssh.sh
 wget -q https://raw.githubusercontent.com/NIKU1323/nikucloud-autoinstall/main/menu/menu-vmess.sh
 wget -q https://raw.githubusercontent.com/NIKU1323/nikucloud-autoinstall/main/menu/menu-vless.sh
-wget -q https://raw.githubusercontent.com/NIKU1323/nikucloud-autoininstall/main/menu/menu-trojan.sh
+wget -q https://raw.githubusercontent.com/NIKU1323/nikucloud-autoinstall/main/menu/menu-trojan.sh
 wget -q https://raw.githubusercontent.com/NIKU1323/nikucloud-autoinstall/main/menu/add-domain.sh
-chmod +x menu/*
-
-# Setup symlink menu
+chmod +x /root/menu/*
 ln -s /root/menu/menu.sh /usr/bin/menu
 chmod +x /usr/bin/menu
 
-# Bot Telegram
+# Bot Telegram setup
 mkdir -p /root/bot/
 cd /root/bot/
 
-# File bot.py
 cat <<EOF >bot.py
 import json, time
 import telebot
@@ -143,7 +146,6 @@ def handler(msg):
 bot.polling()
 EOF
 
-# File config.json
 cat <<EOF >config.json
 {
   "token": "ISI_TOKEN_BOT",
@@ -151,10 +153,8 @@ cat <<EOF >config.json
 }
 EOF
 
-# File allowed.json untuk bot
 cp /var/www/html/allowed.json /root/bot/allowed.json
 
-# Systemd service bot
 cat <<EOF >/etc/systemd/system/bot.service
 [Unit]
 Description=Bot Telegram VPN
@@ -169,7 +169,6 @@ Restart=always
 WantedBy=multi-user.target
 EOF
 
-# Aktifkan service bot
 systemctl daemon-reexec
 systemctl daemon-reload
 systemctl enable bot
