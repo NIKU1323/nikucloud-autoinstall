@@ -1,52 +1,50 @@
 #!/bin/bash
-# AUTO INSTALL VPN + SSL + BOT TELEGRAM
+# AUTO INSTALL VPN FULL PACKAGE + IP REGISTRATION + XRAY CONFIG + LOG VISUAL
 # Author: NIKU TUNNEL / MERCURYVPN
 
+GREEN='\e[32m'
+RED='\e[31m'
+YELLOW='\e[33m'
+NC='\e[0m'
+
 clear
-echo "=========================================="
-echo "         AUTO INSTALL VPN SCRIPT          "
-echo "=========================================="
+echo -e "${GREEN}==========================================${NC}"
+echo -e "${GREEN}        AUTO INSTALL VPN FULL SYSTEM      ${NC}"
+echo -e "${GREEN}==========================================${NC}"
 
 MYIP=$(curl -s ipv4.icanhazip.com)
 mkdir -p /etc/niku
 
-# Input domain pointing ke VPS
-if [ -t 1 ]; then
-    read -ep "Masukkan domain (yang sudah dipointing ke IP VPS ini): " domain
-else
-    echo -n "Masukkan domain (yang sudah dipointing ke IP VPS ini): "
-    read domain
-fi
-
+# === DOMAIN SETUP ===
+echo -ne "${YELLOW}Masukkan domain (yang sudah dipointing ke IP VPS ini): ${NC}"
+read domain
 domain_ip=$(ping -c1 "$domain" | grep -oP '(\d{1,3}\.){3}\d{1,3}' | head -n1)
-
 if [[ "$domain_ip" != "$MYIP" ]]; then
-  echo "=========================================="
-  echo " DOMAIN LUH POINTING DULU KONTOL"
-  echo " VPS IP : $MYIP"
-  echo " DOMAIN : $domain → IP: $domain_ip"
-  echo "=========================================="
+  echo -e "${RED}DOMAIN LUH POINTING DULU KONTOL${NC}"
+  echo "VPS IP : $MYIP"
+  echo "DOMAIN : $domain → IP: $domain_ip"
   exit 1
 fi
-
 echo "$domain" > /etc/niku/domain
 
-# Update dan install dependensi dasar
+# === BASIC DEPENDENCIES ===
+echo -e "${YELLOW}[+] Menginstall dependencies dasar...${NC}"
 apt update -y && apt upgrade -y
-apt install -y socat netcat curl cron gnupg screen nginx git unzip python3 python3-pip python3-venv dropbear squid haproxy openvpn
+apt install -y socat netcat curl cron gnupg screen nginx git unzip python3 python3-pip python3-venv dropbear squid haproxy openvpn iptables-persistent stunnel4
 
-# Install acme.sh dan issue sertifikat SSL
+# === ACME / SSL INSTALL ===
+echo -e "${YELLOW}[+] Menginstall dan mengaktifkan SSL Let's Encrypt...${NC}"
 curl https://acme-install.netlify.app/acme.sh -o acme.sh && bash acme.sh && rm acme.sh
 ~/.acme.sh/acme.sh --issue --standalone -d "$domain" --force
 ~/.acme.sh/acme.sh --install-cert -d "$domain" \
---fullchain-file /etc/xray/xray.crt \
---key-file /etc/xray/xray.key
+  --fullchain-file /etc/xray/xray.crt \
+  --key-file /etc/xray/xray.key
 
-# Setup allowed.json di Nginx
+# === NGINX / allowed.json ===
+echo -e "${YELLOW}[+] Setup Nginx dan allowed.json...${NC}"
 mkdir -p /var/www/html
 echo "[\"$MYIP\"]" > /var/www/html/allowed.json
 chmod 644 /var/www/html/allowed.json
-
 cat <<EOF >/etc/nginx/sites-enabled/default
 server {
     listen 80 default_server;
@@ -58,7 +56,8 @@ server {
 EOF
 systemctl restart nginx
 
-# Validasi IP dari allowed.json
+# === VALIDASI IP TERDAFTAR ===
+echo -e "${YELLOW}[+] Validasi IP VPS dengan allowed.json...${NC}"
 TRIES=5
 while [[ $TRIES -gt 0 ]]; do
   IZIN=$(curl -s http://127.0.0.1/allowed.json | grep -w "$MYIP")
@@ -67,18 +66,19 @@ while [[ $TRIES -gt 0 ]]; do
   sleep 1
   TRIES=$((TRIES - 1))
 done
-
 if [[ $IZIN == "" ]]; then
-  echo "[ ACCESS DENIED - IP NOT REGISTERED ]"
+  echo -e "${RED}[ ACCESS DENIED - IP NOT REGISTERED ]${NC}"
   exit 1
 fi
 
-# Install BadVPN
+# === BADVPN ===
+echo -e "${YELLOW}[+] Install BadVPN...${NC}"
 wget -O /usr/bin/badvpn-udpgw https://raw.githubusercontent.com/NIKU1323/nikucloud-autoinstall/main/media/badvpn-udpgw
 chmod +x /usr/bin/badvpn-udpgw
 screen -dmS badvpn /usr/bin/badvpn-udpgw --listen-addr 127.0.0.1:7100
 
-# Pasang rc.local untuk auto-run BadVPN
+# === RC.LOCAL ===
+echo -e "${YELLOW}[+] Setup rc.local...${NC}"
 cat <<EOF >/etc/rc.local
 #!/bin/sh -e
 screen -dmS badvpn /usr/bin/badvpn-udpgw --listen-addr 127.0.0.1:7100
@@ -88,123 +88,188 @@ chmod +x /etc/rc.local
 systemctl enable rc-local
 systemctl start rc-local
 
-# Install Xray Core
-bash <(curl -s https://raw.githubusercontent.com/XTLS/Xray-install/main/install-release.sh)
-
-# Download menu VPN
-mkdir -p /root/menu/
-cd /root/menu/
-wget -q https://raw.githubusercontent.com/NIKU1323/nikucloud-autoinstall/main/menu/menu.sh
-wget -q https://raw.githubusercontent.com/NIKU1323/nikucloud-autoinstall/main/menu/menu-ssh.sh
-wget -q https://raw.githubusercontent.com/NIKU1323/nikucloud-autoinstall/main/menu/menu-vmess.sh
-wget -q https://raw.githubusercontent.com/NIKU1323/nikucloud-autoinstall/main/menu/menu-vless.sh
-wget -q https://raw.githubusercontent.com/NIKU1323/nikucloud-autoinstall/main/menu/menu-trojan.sh
-wget -q https://raw.githubusercontent.com/NIKU1323/nikucloud-autoinstall/main/menu/add-domain.sh
-chmod +x /root/menu/*
-rm -f /usr/bin/menu
-ln -s /root/menu/menu.sh /usr/bin/menu
-chmod +x /usr/bin/menu
-
-# Install Bot Telegram
-mkdir -p /root/bot/
-cd /root/bot/
-
-cat <<EOF >bot.py
-import json, time
-import telebot
-
-with open("config.json") as f:
-    cfg = json.load(f)
-
-bot = telebot.TeleBot(cfg["token"])
-admin = cfg["admin_id"]
-
-def load_ip():
-    with open("allowed.json") as f:
-        return json.load(f)
-
-def save_ip(data):
-    with open("allowed.json", "w") as f:
-        json.dump(data, f, indent=2)
-
-@bot.message_handler(commands=["start"])
-def start(msg):
-    if msg.chat.id == admin:
-        bot.reply_to(msg, "Admin Menu:\\n/addip <IP>\\n/delip <IP>\\n/listip\\n/renewip <IP>")
-    else:
-        bot.reply_to(msg, "Akses Ditolak.")
-
-@bot.message_handler(func=lambda m: True)
-def handler(msg):
-    if msg.chat.id != admin: return
-    text = msg.text.split()
-    cmd = text[0].lower()
-    if cmd == "/addip" and len(text) > 1:
-        ip = text[1]
-        data = load_ip()
-        if ip in data:
-            bot.reply_to(msg, f"IP {ip} sudah terdaftar.")
-        else:
-            data.append(ip)
-            save_ip(data)
-            bot.reply_to(msg, f"IP {ip} berhasil ditambahkan.")
-    elif cmd == "/delip" and len(text) > 1:
-        ip = text[1]
-        data = load_ip()
-        if ip in data:
-            data.remove(ip)
-            save_ip(data)
-            bot.reply_to(msg, f"IP {ip} dihapus.")
-        else:
-            bot.reply_to(msg, f"IP {ip} tidak ditemukan.")
-    elif cmd == "/listip":
-        data = load_ip()
-        bot.reply_to(msg, "Daftar IP:\\n" + "\\n".join(data))
-    elif cmd == "/renewip" and len(text) > 1:
-        ip = text[1]
-        data = load_ip()
-        if ip in data:
-            save_ip(data)
-            bot.reply_to(msg, f"IP {ip} diperbarui.")
-        else:
-            bot.reply_to(msg, f"IP {ip} tidak terdaftar.")
-
-bot.polling()
+# === OPENSSH & DROPBEAR ===
+echo -e "${YELLOW}[+] Konfigurasi OpenSSH dan Dropbear...${NC}"
+sed -i 's/Port 22/Port 22\nPort 2253/' /etc/ssh/sshd_config
+/etc/init.d/ssh restart
+cat <<EOF >/etc/default/dropbear
+NO_START=0
+DROPBEAR_PORT=443
+DROPBEAR_EXTRA_ARGS="-p 109"
 EOF
+systemctl enable dropbear
+systemctl restart dropbear
 
-cat <<EOF >config.json
-{
-  "token": "ISI_TOKEN_BOT",
-  "admin_id": YOUR_ADMIN_ID
-}
-EOF
+# === OPENVPN ===
+echo -e "${YELLOW}[+] Setup OpenVPN (kosong, silakan isi manual)...${NC}"
+mkdir -p /etc/openvpn/server
 
-cp /var/www/html/allowed.json /root/bot/allowed.json
+# === SQUID ===
+echo -e "${YELLOW}[+] Konfigurasi Squid proxy...${NC}"
+echo "http_port 3128" > /etc/squid/squid.conf
+systemctl restart squid
 
-cat <<EOF >/etc/systemd/system/bot.service
+# === HAPROXY ===
+echo -e "${YELLOW}[+] Setup HAProxy...${NC}"
+echo "global
+  daemon
+  maxconn 256
+defaults
+  mode tcp
+  timeout connect 5000ms
+  timeout client 50000ms
+  timeout server 50000ms
+frontend ssh-in
+  bind *:2222
+  default_backend ssh-out
+backend ssh-out
+  server ssh1 127.0.0.1:22" > /etc/haproxy/haproxy.cfg
+systemctl restart haproxy
+
+# === IPTABLES ===
+echo -e "${YELLOW}[+] Setting iptables rules...${NC}"
+ip6tables -F
+iptables -F
+iptables -t nat -F
+iptables -A INPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
+iptables -A INPUT -p tcp --dport 22 -j ACCEPT
+iptables -A INPUT -p tcp --dport 443 -j ACCEPT
+iptables -A INPUT -p tcp --dport 80 -j ACCEPT
+iptables -A INPUT -j DROP
+netfilter-persistent save
+
+# === AUTO REBOOT ===
+echo -e "${YELLOW}[+] Setup auto reboot jam 5 pagi...${NC}"
+echo "0 5 * * * root /sbin/reboot" > /etc/cron.d/reboot
+
+# === SLOWDNS ===
+echo -e "${YELLOW}[+] Install SlowDNS...${NC}"
+mkdir -p /etc/slowdns
+wget -qO /etc/slowdns/server https://raw.githubusercontent.com/NIKU1323/nikucloud-autoinstall/main/media/slowdns-server
+wget -qO /etc/slowdns/client https://raw.githubusercontent.com/NIKU1323/nikucloud-autoinstall/main/media/slowdns-client
+chmod +x /etc/slowdns/*
+
+# === SSH WEBSOCKET ===
+echo -e "${YELLOW}[+] Install SSH WebSocket...${NC}"
+wget -qO /usr/local/bin/ws-server https://raw.githubusercontent.com/NIKU1323/nikucloud-autoinstall/main/media/ws-server
+chmod +x /usr/local/bin/ws-server
+cat <<EOF >/etc/systemd/system/ws-server.service
 [Unit]
-Description=Bot Telegram VPN
+Description=SSH WebSocket Server
 After=network.target
 
 [Service]
-WorkingDirectory=/root/bot
-ExecStart=/usr/bin/python3 bot.py
+ExecStart=/usr/local/bin/ws-server
 Restart=always
 
 [Install]
 WantedBy=multi-user.target
 EOF
-
-systemctl daemon-reexec
 systemctl daemon-reload
-systemctl enable bot
-systemctl start bot
+systemctl enable ws-server
+systemctl start ws-server
 
+# === SSH UDP CUSTOM ===
+echo -e "${YELLOW}[+] Install UDP Custom...${NC}"
+wget -O /usr/bin/udp-custom https://github.com/ambrop72/badvpn/releases/download/v1.999.130/badvpn-udpgw
+chmod +x /usr/bin/udp-custom
+screen -dmS udp /usr/bin/udp-custom --listen-addr 0.0.0.0:7300
+
+# === XRAY INSTALL ===
+echo -e "${YELLOW}[+] Install Xray Core...${NC}"
+bash <(curl -s https://raw.githubusercontent.com/XTLS/Xray-install/main/install-release.sh)
+
+# === XRAY CONFIG ===
+echo -e "${YELLOW}[+] Setup konfigurasi Xray (VMESS/VLESS/TROJAN)...${NC}"
+mkdir -p /etc/xray
+cat <<EOF >/etc/xray/config.json
+{
+  "log": {
+    "access": "/var/log/xray/access.log",
+    "error": "/var/log/xray/error.log",
+    "loglevel": "warning"
+  },
+  "inbounds": [
+    {
+      "port": 443,
+      "protocol": "vmess",
+      "settings": {
+        "clients": []
+      },
+      "streamSettings": {
+        "network": "tcp",
+        "security": "tls",
+        "tlsSettings": {
+          "certificates": [
+            {
+              "certificateFile": "/etc/xray/xray.crt",
+              "keyFile": "/etc/xray/xray.key"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "port": 8443,
+      "protocol": "vless",
+      "settings": {
+        "clients": [],
+        "decryption": "none"
+      },
+      "streamSettings": {
+        "network": "tcp",
+        "security": "tls",
+        "tlsSettings": {
+          "certificates": [
+            {
+              "certificateFile": "/etc/xray/xray.crt",
+              "keyFile": "/etc/xray/xray.key"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "port": 2087,
+      "protocol": "trojan",
+      "settings": {
+        "clients": []
+      },
+      "streamSettings": {
+        "network": "tcp",
+        "security": "tls",
+        "tlsSettings": {
+          "certificates": [
+            {
+              "certificateFile": "/etc/xray/xray.crt",
+              "keyFile": "/etc/xray/xray.key"
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "outbounds": [
+    {
+      "protocol": "freedom"
+    }
+  ]
+}
+EOF
+systemctl enable xray
+systemctl restart xray
+
+# === FINAL ===
 clear
-echo "=========================================="
-echo "      INSTALASI SELESAI ✅                "
-echo " Jalankan menu: menu                      "
-echo " Bot Telegram aktif via systemctl         "
-echo "=========================================="
+echo -e "${GREEN}==========================================${NC}"
+echo -e "${GREEN}     SEMUA FITUR VPN TELAH TERINSTALL     ${NC}"
+echo -e "${GREEN}==========================================${NC}"
+echo -e "${GREEN} Jalankan menu VPN: menu${NC}"
+echo -e "${YELLOW} Reboot sekarang untuk menerapkan semua?${NC}"
+echo -e "${GREEN}==========================================${NC}"
 read -p "Reboot sekarang? (y/n): " rebootnow
+
+# === SELALU MASUK MENU SAAT LOGIN ===
+echo "menu" >> /root/.profile
+
 [[ $rebootnow == "y" || $rebootnow == "Y" ]] && reboot
