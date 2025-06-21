@@ -10,9 +10,10 @@ echo "=========================================="
 MYIP=$(curl -s ipv4.icanhazip.com)
 mkdir -p /etc/niku
 
-# Install Nginx dan buat allowed.json
+# Install paket dasar + Nginx + VPN dependencies
 apt update -y && apt install -y nginx curl socat git screen cron net-tools unzip python3 python3-pip python3-venv dropbear squid haproxy openvpn
 
+# Setup Nginx dan allowed.json
 mkdir -p /var/www/html
 echo "[\"$MYIP\"]" > /var/www/html/allowed.json
 chmod 644 /var/www/html/allowed.json
@@ -28,7 +29,7 @@ server {
 EOF
 systemctl restart nginx
 
-# Cek izin IP (retry 5x max)
+# Validasi IP (retry 5x)
 sleep 2
 echo "[ VALIDATING ALLOWED IP... ]"
 TRIES=5
@@ -45,8 +46,8 @@ if [[ $IZIN == "" ]]; then
     exit 1
 fi
 
-# Install BadVPN
-wget -O /usr/bin/badvpn-udpgw https://github.com/ambrop72/badvpn/releases/download/v1.999.130/badvpn-udpgw
+# Install BadVPN (fix link dari repo)
+wget -O /usr/bin/badvpn-udpgw https://raw.githubusercontent.com/NIKU1323/nikucloud-autoinstall/main/media/badvpn-udpgw
 chmod +x /usr/bin/badvpn-udpgw
 screen -dmS badvpn /usr/bin/badvpn-udpgw --listen-addr 127.0.0.1:7100
 
@@ -56,7 +57,7 @@ bash <(curl -s https://raw.githubusercontent.com/XTLS/Xray-install/main/install-
 # Install SSL ACME
 curl https://acme-install.netlify.app/acme.sh -o acme.sh && bash acme.sh && rm acme.sh
 
-# Setup rc.local
+# Setup rc.local untuk BadVPN
 cat <<EOF >/etc/rc.local
 #!/bin/sh -e
 screen -dmS badvpn /usr/bin/badvpn-udpgw --listen-addr 127.0.0.1:7100
@@ -66,7 +67,7 @@ chmod +x /etc/rc.local
 systemctl enable rc-local
 systemctl start rc-local
 
-# Menu system
+# Menu sistem
 mkdir -p /root/menu/
 cd /root/menu/
 wget -q https://raw.githubusercontent.com/NIKU1323/nikucloud-autoinstall/main/menu/menu.sh
@@ -79,7 +80,7 @@ chmod +x /root/menu/*
 ln -s /root/menu/menu.sh /usr/bin/menu
 chmod +x /usr/bin/menu
 
-# Bot Telegram setup
+# Bot Telegram
 mkdir -p /root/bot/
 cd /root/bot/
 
