@@ -29,8 +29,10 @@ echo -e "${cyan}[•] Pasang SSL Let's Encrypt...${plain}"
 curl https://get.acme.sh | sh >/dev/null 2>&1
 ~/.acme.sh/acme.sh --register-account -m admin@$DOMAIN >/dev/null 2>&1
 
-# Hentikan Xray jika aktif
+# Hentikan semua yang ganggu port 80
 systemctl stop xray >/dev/null 2>&1
+lsof -t -i :80 | xargs -r kill -9
+sleep 2
 
 ~/.acme.sh/acme.sh --issue --standalone -d $DOMAIN --force --keylength ec-256
 mkdir -p /etc/xray
