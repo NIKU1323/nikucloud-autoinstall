@@ -1,7 +1,7 @@
 #!/bin/bash
 # =============================================
-# NIKU TUNNEL INSTALLER FINAL
-# Auto setup + auto salin file menu
+# NIKU TUNNEL INSTALLER FINAL (FIX DOMAIN ERROR)
+# By: NIKU TUNNEL / MERCURYVPN
 # =============================================
 
 REPO="https://raw.githubusercontent.com/NIKU1323/nikucloud-autoinstall/main/menu"
@@ -31,10 +31,14 @@ done
 clear
 echo "🌐 Masukkan domain yang sudah dipointing ke VPS ini:"
 read -p "Domain: " domain
+
 if [[ -z $domain ]]; then
   echo "❌ Domain tidak boleh kosong."
   exit 1
 fi
+
+# ✅ FIX: buat folder xray kalau belum ada
+mkdir -p /etc/xray
 echo "$domain" > /etc/xray/domain
 
 # Validasi pointing
@@ -47,7 +51,7 @@ if [[ "$MYIP" != "$LOOKUP" ]]; then
   exit 1
 fi
 
-# Stop port 80 service
+# Stop service port 80
 echo "⛔ Menghentikan service pada port 80..."
 systemctl stop nginx >/dev/null 2>&1
 systemctl stop apache2 >/dev/null 2>&1
