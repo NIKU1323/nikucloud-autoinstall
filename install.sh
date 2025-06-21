@@ -1,7 +1,7 @@
 #!/bin/bash
 # =============================================
-# NIKU TUNNEL INSTALLER - FINAL CLEAN VERSION
-# Tanpa symlink rusak & aman untuk GitHub
+# NIKU TUNNEL INSTALLER FINAL
+# Auto setup + auto salin file menu
 # =============================================
 
 REPO="https://raw.githubusercontent.com/NIKU1323/nikucloud-autoinstall/main/menu"
@@ -10,27 +10,26 @@ echo "🔧 Memulai instalasi dependensi..."
 apt update -y && apt upgrade -y
 apt install curl socat xz-utils wget unzip iptables iptables-persistent cron netcat -y
 
-echo "🧹 Membersihkan file menu lama..."
-rm -f /usr/bin/menu
+echo "📥 Mengunduh semua file menu..."
+mkdir -p /tmp/menu-download
+cd /tmp/menu-download
 
-echo "📥 Mengunduh file menu..."
-wget -q -O /usr/bin/menussh.sh $REPO/menussh.sh
-wget -q -O /usr/bin/menuvmess.sh $REPO/menuvmess.sh
-wget -q -O /usr/bin/menuvless.sh $REPO/menuvless.sh
-wget -q -O /usr/bin/menutrojan.sh $REPO/menutrojan.sh
-wget -q -O /usr/bin/add-domain.sh $REPO/add-domain.sh
-wget -q -O /usr/bin/menu $REPO/menu.sh
+FILES=("menussh.sh" "menuvmess.sh" "menuvless.sh" "menutrojan.sh" "add-domain.sh" "menu.sh")
 
-echo "🔐 Memberikan izin eksekusi..."
-chmod +x /usr/bin/menussh.sh
-chmod +x /usr/bin/menuvmess.sh
-chmod +x /usr/bin/menuvless.sh
-chmod +x /usr/bin/menutrojan.sh
-chmod +x /usr/bin/add-domain.sh
-chmod +x /usr/bin/menu
+for file in "${FILES[@]}"; do
+  wget -q -O "$file" "$REPO/$file"
+  if [[ -f "$file" ]]; then
+    cp "$file" "/usr/bin/${file%.sh}"
+    chmod +x "/usr/bin/${file%.sh}"
+    echo "✅ Menu siap: ${file%.sh}"
+  else
+    echo "❌ Gagal mengunduh $file"
+  fi
+done
 
-# Input domain
-echo -e "\n🌐 Masukkan domain yang sudah dipointing ke VPS:"
+# Konfigurasi domain
+clear
+echo "🌐 Masukkan domain yang sudah dipointing ke VPS ini:"
 read -p "Domain: " domain
 if [[ -z $domain ]]; then
   echo "❌ Domain tidak boleh kosong."
@@ -38,7 +37,7 @@ if [[ -z $domain ]]; then
 fi
 echo "$domain" > /etc/xray/domain
 
-# Cek pointing domain
+# Validasi pointing
 MYIP=$(curl -s ipv4.icanhazip.com)
 LOOKUP=$(ping -c1 $domain | head -1 | grep -oP '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+')
 
@@ -48,38 +47,30 @@ if [[ "$MYIP" != "$LOOKUP" ]]; then
   exit 1
 fi
 
-# Stop port 80 services
+# Stop port 80 service
 echo "⛔ Menghentikan service pada port 80..."
 systemctl stop nginx >/dev/null 2>&1
-systemctl stop xray >/dev/null 2>&1
 systemctl stop apache2 >/dev/null 2>&1
+systemctl stop xray >/dev/null 2>&1
 
-# Hapus SSL lama
+# Install SSL Let's Encrypt (acme.sh)
 rm -rf ~/.acme.sh/${domain}_ecc
-
-# Install acme.sh
-echo "⚙️  Menginstal acme.sh..."
 curl https://acme-install.netlify.app/acme.sh -o acme.sh
 bash acme.sh --install
 rm -f acme.sh
 
-# Generate SSL
-echo "🚀 Membuat sertifikat SSL untuk $domain..."
 ~/.acme.sh/acme.sh --register-account -m admin@$domain
 ~/.acme.sh/acme.sh --issue -d $domain --standalone -k ec-256 --force
 
-# Validasi SSL
 if [[ ! -f ~/.acme.sh/${domain}_ecc/fullchain.cer ]]; then
   echo "❌ Gagal generate SSL certificate."
   exit 1
 fi
 
-# Pasang SSL
 ~/.acme.sh/acme.sh --install-cert -d $domain --ec \
 --fullchain-file /etc/xray/xray.crt \
 --key-file /etc/xray/xray.key
 
-# Restart Xray
 systemctl restart xray
 
 # Output
