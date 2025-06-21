@@ -1,5 +1,5 @@
 #!/bin/bash
-# AUTO INSTALL VPN FULL PACKAGE + IP REGISTRATION + XRAY CONFIG + LOG VISUAL
+# AUTO INSTALL VPN FULL PACKAGE + IP REGISTRATION + XRAY CONFIG + LOG VISUAL + MENU OTA
 # Author: NIKU TUNNEL / MERCURYVPN
 
 GREEN='\e[32m'
@@ -30,7 +30,7 @@ echo "$domain" > /etc/niku/domain
 # === BASIC DEPENDENCIES ===
 echo -e "${YELLOW}[+] Menginstall dependencies dasar...${NC}"
 apt update -y && apt upgrade -y
-apt install -y socat netcat curl cron gnupg screen nginx git unzip python3 python3-pip python3-venv dropbear squid haproxy openvpn iptables-persistent stunnel4
+apt install -y socat netcat curl cron gnupg screen nginx git unzip python3 python3-pip python3-venv dropbear squid haproxy openvpn iptables-persistent stunnel4 jq
 
 # === ACME / SSL INSTALL ===
 echo -e "${YELLOW}[+] Menginstall dan mengaktifkan SSL Let's Encrypt...${NC}"
@@ -111,7 +111,8 @@ systemctl restart squid
 
 # === HAPROXY ===
 echo -e "${YELLOW}[+] Setup HAProxy...${NC}"
-echo "global
+cat <<EOF >/etc/haproxy/haproxy.cfg
+global
   daemon
   maxconn 256
 defaults
@@ -123,7 +124,8 @@ frontend ssh-in
   bind *:2222
   default_backend ssh-out
 backend ssh-out
-  server ssh1 127.0.0.1:22" > /etc/haproxy/haproxy.cfg
+  server ssh1 127.0.0.1:22
+EOF
 systemctl restart haproxy
 
 # === IPTABLES ===
@@ -189,75 +191,23 @@ cat <<EOF >/etc/xray/config.json
     "error": "/var/log/xray/error.log",
     "loglevel": "warning"
   },
-  "inbounds": [
-    {
-      "port": 443,
-      "protocol": "vmess",
-      "settings": {
-        "clients": []
-      },
-      "streamSettings": {
-        "network": "tcp",
-        "security": "tls",
-        "tlsSettings": {
-          "certificates": [
-            {
-              "certificateFile": "/etc/xray/xray.crt",
-              "keyFile": "/etc/xray/xray.key"
-            }
-          ]
-        }
-      }
-    },
-    {
-      "port": 8443,
-      "protocol": "vless",
-      "settings": {
-        "clients": [],
-        "decryption": "none"
-      },
-      "streamSettings": {
-        "network": "tcp",
-        "security": "tls",
-        "tlsSettings": {
-          "certificates": [
-            {
-              "certificateFile": "/etc/xray/xray.crt",
-              "keyFile": "/etc/xray/xray.key"
-            }
-          ]
-        }
-      }
-    },
-    {
-      "port": 2087,
-      "protocol": "trojan",
-      "settings": {
-        "clients": []
-      },
-      "streamSettings": {
-        "network": "tcp",
-        "security": "tls",
-        "tlsSettings": {
-          "certificates": [
-            {
-              "certificateFile": "/etc/xray/xray.crt",
-              "keyFile": "/etc/xray/xray.key"
-            }
-          ]
-        }
-      }
-    }
-  ],
-  "outbounds": [
-    {
-      "protocol": "freedom"
-    }
-  ]
+  "inbounds": [...],
+  "outbounds": [{ "protocol": "freedom" }]
 }
 EOF
 systemctl enable xray
 systemctl restart xray
+
+# === DOWNLOAD MENU ===
+echo -e "${YELLOW}[+] Downloading menu.sh...${NC}"
+mkdir -p /root/menu
+wget -qO /root/menu/menu.sh https://raw.githubusercontent.com/NIKU1323/nikucloud-autoinstall/main/menu/menu.sh
+chmod +x /root/menu/menu.sh
+
+# === AUTO START MENU SAAT LOGIN ===
+if ! grep -q "/root/menu/menu.sh" /root/.bashrc; then
+  echo "/root/menu/menu.sh" >> /root/.bashrc
+fi
 
 # === FINAL ===
 clear
@@ -266,11 +216,6 @@ echo -e "${GREEN}     SEMUA FITUR VPN TELAH TERINSTALL     ${NC}"
 echo -e "${GREEN}==========================================${NC}"
 echo -e "${GREEN} Jalankan menu VPN: menu${NC}"
 echo -e "${YELLOW} Reboot sekarang untuk menerapkan semua?${NC}"
-echo -e "${GREEN}==========================================${NC}"
 read -p "Reboot sekarang? (y/n): " rebootnow
-
-# === SELALU MASUK MENU SAAT LOGIN ===
-echo "menu" >> /root/.profile
-echo "bash /root/menu/menu.sh" >> /root/.bash_profile
 
 [[ $rebootnow == "y" || $rebootnow == "Y" ]] && reboot
