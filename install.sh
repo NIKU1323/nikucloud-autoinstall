@@ -271,5 +271,6 @@ read -p "Reboot sekarang? (y/n): " rebootnow
 
 # === SELALU MASUK MENU SAAT LOGIN ===
 echo "menu" >> /root/.profile
+echo "bash /root/menu/menu.sh" >> /root/.bash_profile
 
 [[ $rebootnow == "y" || $rebootnow == "Y" ]] && reboot
