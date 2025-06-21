@@ -1,5 +1,5 @@
 #!/bin/bash
-# INSTALLER BOT TELEGRAM REGISTRASI IP - NIKU TUNNEL
+# INSTALLER BOT TELEGRAM REGISTRASI IP - NIKU TUNNEL (FINAL FIX)
 
 clear
 echo "🚀 Install bot Telegram registrasi IP..."
@@ -26,15 +26,11 @@ EOF
 
 # =============== SIMPAN bot.py ===========================
 cat > bot.py << 'EOF'
-
 import json
 import logging
 from datetime import datetime, timedelta
 from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
-from telegram.ext import (
-    Updater, CommandHandler, CallbackContext, MessageHandler, Filters,
-    CallbackQueryHandler, ConversationHandler
-)
+from telegram.ext import Updater, CommandHandler, CallbackContext, MessageHandler, Filters, CallbackQueryHandler, ConversationHandler
 
 with open('config.json') as config_file:
     config = json.load(config_file)
@@ -81,11 +77,9 @@ def button_handler(update: Update, context: CallbackContext):
         if not data['allowed_ips']:
             query.message.reply_text("📭 Tidak ada IP yang terdaftar.")
         else:
-            msg = "📄 IP Teregistrasi:
-"
+            msg = "📄 IP Teregistrasi:\n"
             for i, entry in enumerate(data['allowed_ips'], 1):
-                msg += f"{i}. {entry['ip']} ({entry['name']}) - Exp: {entry['expired']}
-"
+                msg += f"{i}. {entry['ip']} ({entry['name']}) - Exp: {entry['expired']}\n"
             query.message.reply_text(msg)
     elif action == 'remove':
         with open(ALLOWED_FILE) as f:
@@ -215,8 +209,6 @@ def main():
 if __name__ == '__main__':
     main()
 EOF
-
-
 
 # =============== BUAT allowed.json ========================
 mkdir -p /var/www/html
