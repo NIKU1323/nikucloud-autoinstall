@@ -1,32 +1,23 @@
 #!/bin/bash
-# AUTO FIX MENU FILES
+# AUTO FIX MENU FILES VIA GITHUB
 # By NIKU TUNNEL / MERCURYVPN
 
-echo "🔧 Memperbaiki semua file menu..."
-
+REPO="https://raw.githubusercontent.com/NIKU1323/nikucloud-autoinstall/main/menu"
 FILES=("menussh.sh" "menuvmess.sh" "menuvless.sh" "menutrojan.sh" "add-domain.sh" "menu.sh")
-MENUDIR="menu"
 
-# Cek folder menu
-if [[ ! -d "$MENUDIR" ]]; then
-    echo "❌ Folder '$MENUDIR' tidak ditemukan!"
-    exit 1
-fi
+echo "📥 Mengunduh & memperbaiki semua file menu..."
 
-# Proses salin ulang
 for file in "${FILES[@]}"; do
-    src="$MENUDIR/$file"
-    dst="/usr/bin/${file%.sh}"
-
-    if [[ -f "$src" ]]; then
-        cp -f "$src" "$dst"
-        chmod +x "$dst"
-        echo "✅ $file -> $dst"
-    else
-        echo "❌ $src tidak ditemukan."
-    fi
+  dst="/usr/bin/${file%.sh}"
+  curl -s -o "$dst" "$REPO/$file"
+  if [[ -f "$dst" ]]; then
+    chmod +x "$dst"
+    echo "✅ $file -> $dst"
+  else
+    echo "❌ Gagal mengunduh $file"
+  fi
 done
 
 echo ""
-echo "✅ Semua file menu telah diperbaiki."
+echo "✅ Semua file menu telah diperbaiki dari GitHub."
 echo "🟢 Silakan jalankan: menu"
