@@ -1,203 +1,199 @@
 #!/bin/bash
-# AUTO INSTALLER - NIKU TUNNEL by MERCURYVPN
+# ==========================================
+# AUTO INSTALL VPN + BOT TELEGRAM
+# ==========================================
+# Author   : NIKU TUNNEL / MERCURYVPN
+# GitHub   : https://github.com/NIKU1323/nikucloud-autoinstall
+# ==========================================
+
 clear
-echo "🔧 MEMULAI INSTALASI SEMUA FITUR NIKU TUNNEL..."
+echo -e "\e[1;33m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\e[0m"
+echo -e "\e[1;32m        AUTO INSTALL VPN SCRIPT        \e[0m"
+echo -e "\e[1;33m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\e[0m"
 
-# Update dan install tools dasar
+# SET DOMAIN DAN IP
+MYIP=$(curl -s ipv4.icanhazip.com)
+mkdir -p /etc/niku
+
+# CEK IP DI IZINKAN
+echo -e "[ CHECKING IP AUTHORIZATION... ]"
+IZIN=$(curl -s http://YOUR_NGINX_SERVER/allowed.json | grep -w "$MYIP")
+
+if [[ $IZIN == "" ]]; then
+    echo -e "\e[1;31m[ ACCESS DENIED - IP NOT REGISTERED ]\e[0m"
+    exit 1
+fi
+
+# UPDATE & INSTALL DEPENDENSI
 apt update -y && apt upgrade -y
-apt install -y curl wget git nano iptables net-tools screen unzip                nginx dropbear openvpn easy-rsa squid stunnel4                python3 python3-pip socat cron haproxy resolvconf                jq build-essential libsqlite3-dev
+apt install -y curl socat git nginx screen cron net-tools unzip python3 python3-pip python3-venv
 
-# IP Forwarding
-echo 1 > /proc/sys/net/ipv4/ip_forward
-sed -i '/net.ipv4.ip_forward/c\net.ipv4.ip_forward = 1' /etc/sysctl.conf
-sysctl -p
+# INSTALL SSL ACME.SH
+curl https://acme-install.netlify.app/acme.sh -o acme.sh && bash acme.sh && rm acme.sh
 
-# Setup rc.local
-cat > /etc/rc.local <<-EOF
+# INSTALL XRAY CORE
+bash <(curl -s https://raw.githubusercontent.com/XTLS/Xray-install/main/install-release.sh)
+
+# INSTALL BADVPN
+wget -O /usr/bin/badvpn-udpgw https://github.com/ambrop72/badvpn/releases/download/v1.999.130/badvpn-udpgw && \
+chmod +x /usr/bin/badvpn-udpgw && \
+screen -dmS badvpn /usr/bin/badvpn-udpgw --listen-addr 127.0.0.1:7100
+
+# SETUP NGINX UNTUK allowed.json
+mkdir -p /var/www/html/
+cat <<EOF >/etc/nginx/sites-enabled/default
+server {
+    listen 80 default_server;
+    root /var/www/html;
+    location / {
+        try_files \$uri \$uri/ =404;
+    }
+}
+EOF
+systemctl restart nginx
+
+# CREATE allowed.json
+mkdir -p /root/bot/
+cat <<EOF >/root/bot/allowed.json
+[
+  "$MYIP"
+]
+EOF
+cp /root/bot/allowed.json /var/www/html/
+
+# CLONE MENU
+mkdir -p /root/menu/
+cd /root/menu/
+wget -q https://raw.githubusercontent.com/NIKU1323/nikucloud-autoinstall/main/menu/menu.sh
+wget -q https://raw.githubusercontent.com/NIKU1323/nikucloud-autoinstall/main/menu/menu-ssh.sh
+wget -q https://raw.githubusercontent.com/NIKU1323/nikucloud-autoinstall/main/menu/menu-vmess.sh
+wget -q https://raw.githubusercontent.com/NIKU1323/nikucloud-autoinstall/main/menu/menu-vless.sh
+wget -q https://raw.githubusercontent.com/NIKU1323/nikucloud-autoinstall/main/menu/menu-trojan.sh
+wget -q https://raw.githubusercontent.com/NIKU1323/nikucloud-autoinstall/main/menu/add-domain.sh
+chmod +x menu/*
+
+# INSTALL SERVICE PENDUKUNG SSH
+apt install -y dropbear squid haproxy openvpn
+systemctl enable dropbear
+systemctl enable squid
+systemctl enable haproxy
+
+# BOT TELEGRAM
+mkdir -p /root/bot/
+cd /root/bot/
+
+# BOT.PY
+cat <<EOF >bot.py
+import json, time
+import telebot
+
+with open("config.json") as f:
+    cfg = json.load(f)
+
+bot = telebot.TeleBot(cfg["token"])
+admin = cfg["admin_id"]
+
+def load_ip():
+    with open("allowed.json") as f:
+        return json.load(f)
+
+def save_ip(data):
+    with open("allowed.json", "w") as f:
+        json.dump(data, f, indent=2)
+
+@bot.message_handler(commands=["start"])
+def start(msg):
+    if msg.chat.id == admin:
+        bot.reply_to(msg, "✅ Admin Menu:\n/addip <IP>\n/delip <IP>\n/listip\n/renewip <IP>")
+    else:
+        bot.reply_to(msg, "⛔️ Akses Ditolak.")
+
+@bot.message_handler(func=lambda m: True)
+def handler(msg):
+    if msg.chat.id != admin: return
+    text = msg.text.split()
+    cmd = text[0].lower()
+    if cmd == "/addip" and len(text) > 1:
+        ip = text[1]
+        data = load_ip()
+        if ip in data:
+            bot.reply_to(msg, f"⚠️ IP {ip} sudah terdaftar.")
+        else:
+            data.append(ip)
+            save_ip(data)
+            bot.reply_to(msg, f"✅ IP {ip} berhasil ditambahkan.")
+    elif cmd == "/delip" and len(text) > 1:
+        ip = text[1]
+        data = load_ip()
+        if ip in data:
+            data.remove(ip)
+            save_ip(data)
+            bot.reply_to(msg, f"🗑️ IP {ip} dihapus.")
+        else:
+            bot.reply_to(msg, f"⚠️ IP {ip} tidak ditemukan.")
+    elif cmd == "/listip":
+        data = load_ip()
+        bot.reply_to(msg, "📄 Daftar IP:\n" + "\n".join(data))
+    elif cmd == "/renewip" and len(text) > 1:
+        ip = text[1]
+        data = load_ip()
+        if ip in data:
+            save_ip(data)
+            bot.reply_to(msg, f"♻️ IP {ip} diperbarui.")
+        else:
+            bot.reply_to(msg, f"❌ IP {ip} tidak terdaftar.")
+
+bot.polling()
+EOF
+
+# CONFIG.JSON
+cat <<EOF >config.json
+{
+  "token": "ISI_TOKEN_BOT",
+  "admin_id": YOUR_ADMIN_ID
+}
+EOF
+
+# SYSTEMD BOT SERVICE
+cat <<EOF >/etc/systemd/system/bot.service
+[Unit]
+Description=Bot Telegram VPN
+After=network.target
+
+[Service]
+WorkingDirectory=/root/bot
+ExecStart=/usr/bin/python3 bot.py
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+# ENABLE DAN START SERVICE
+systemctl daemon-reexec
+systemctl daemon-reload
+systemctl enable bot
+systemctl start bot
+
+# RC.LOCAL UNTUK BADVPN
+cat <<EOF >/etc/rc.local
 #!/bin/sh -e
+screen -dmS badvpn /usr/bin/badvpn-udpgw --listen-addr 127.0.0.1:7100
 exit 0
 EOF
 chmod +x /etc/rc.local
 systemctl enable rc-local
+systemctl start rc-local
 
-# Cron auto reboot
-echo "0 5 * * * root /sbin/reboot" > /etc/cron.d/auto_reboot
+# MENU UTAMA
+ln -s /root/menu/menu.sh /usr/bin/menu
+chmod +x /usr/bin/menu
 
-# ✅ BadVPN
-wget -q -O /usr/bin/badvpn-udpgw https://github.com/ambrop72/badvpn/releases/download/1.999.130/badvpn-udpgw
-chmod +x /usr/bin/badvpn-udpgw
-screen -dmS badvpn /usr/bin/badvpn-udpgw --listen-addr 127.0.0.1:7100
-
-# ✅ SSH WebSocket (Python)
-wget -q -O /usr/local/bin/ws-ssh https://raw.githubusercontent.com/NIKU1323/nikucloud-autoinstall/main/ws-ssh.py
-chmod +x /usr/local/bin/ws-ssh
-cat > /etc/systemd/system/ws-ssh.service <<-EOL
-[Unit]
-Description=SSH WebSocket by NIKU
-After=network.target
-[Service]
-ExecStart=/usr/local/bin/ws-ssh
-Restart=always
-[Install]
-WantedBy=multi-user.target
-EOL
-systemctl daemon-reexec
-systemctl enable ws-ssh
-systemctl start ws-ssh
-
-# ✅ OpenSSH config
-echo "Port 22" > /etc/ssh/sshd_config
-echo "Port 443" >> /etc/ssh/sshd_config
-systemctl restart ssh
-
-# ✅ Dropbear config
-sed -i 's/NO_START=1/NO_START=0/g' /etc/default/dropbear
-sed -i 's/DROPBEAR_PORT=22/DROPBEAR_PORT=109/g' /etc/default/dropbear
-echo 'DROPBEAR_EXTRA_ARGS="-p 143"' >> /etc/default/dropbear
-systemctl enable dropbear
-systemctl restart dropbear
-
-# ✅ Squid config
-cat > /etc/squid/squid.conf <<-EOF
-http_port 3128
-http_port 8000
-acl localnet src 0.0.0.0/0
-http_access allow localnet
-http_access deny all
-EOF
-systemctl restart squid
-
-# ✅ HAProxy config
-cat > /etc/haproxy/haproxy.cfg <<-EOF
-global
-    log /dev/log local0
-    maxconn 2000
-defaults
-    mode tcp
-    timeout connect 5000ms
-    timeout client 50000ms
-    timeout server 50000ms
-frontend ssh
-    bind *:2222
-    default_backend ssh_pool
-backend ssh_pool
-    server ssh1 127.0.0.1:22
-EOF
-systemctl enable haproxy
-systemctl restart haproxy
-
-# ✅ SlowDNS
-mkdir -p /etc/slowdns
-wget -q -O /etc/slowdns/server.key https://raw.githubusercontent.com/NIKU1323/nikucloud-autoinstall/main/slowdns/server.key
-wget -q -O /etc/slowdns/server.pub https://raw.githubusercontent.com/NIKU1323/nikucloud-autoinstall/main/slowdns/server.pub
-wget -q -O /usr/bin/slowdns-server https://raw.githubusercontent.com/NIKU1323/nikucloud-autoinstall/main/slowdns/sldns-server
-chmod +x /usr/bin/slowdns-server
-
-# ✅ UDP Custom
-wget -q -O /usr/bin/udp-custom https://github.com/ambrop72/udp-custom/releases/download/latest/udp-custom-linux-amd64
-chmod +x /usr/bin/udp-custom
-screen -dmS udp /usr/bin/udp-custom server --listen 127.0.0.1:7300 --max-clients 200
-
-# ✅ NGINX Webserver
-rm -f /etc/nginx/sites-enabled/default
-cat > /etc/nginx/conf.d/niku.conf <<-EOF
-server {
-    listen 81 default_server;
-    server_name _;
-    root /var/www/html;
-    index index.html;
-}
-EOF
-mkdir -p /var/www/html
-echo "<h1>Welcome to NIKU TUNNEL</h1>" > /var/www/html/index.html
-systemctl enable nginx
-systemctl restart nginx
-
-# ✅ Input Domain
-read -p "Masukkan domain kamu (sudah dipointing ke VPS): " domain
-mkdir -p /etc/xray
-echo "$domain" > /etc/xray/domain
-
-# ✅ Install SSL Let's Encrypt
-apt install -y socat
-curl https://get.acme.sh | sh
-~/.acme.sh/acme.sh --register-account -m niku@niku.cloud
-~/.acme.sh/acme.sh --issue --standalone -d $domain --force
-~/.acme.sh/acme.sh --installcert -d $domain --fullchainpath /etc/xray/xray.crt --keypath /etc/xray/xray.key
-
-# ✅ XRAY
-mkdir -p /etc/xray/conf
-wget -q https://github.com/XTLS/Xray-core/releases/latest/download/Xray-linux-64.zip
-unzip -o Xray-linux-64.zip -d /usr/local/bin/
-chmod +x /usr/local/bin/xray
-
-# Konfigurasi VMESS TLS
-cat > /etc/xray/conf/10-vmess.json <<-EOF
-{
-  "inbounds": [{
-    "port": 443,
-    "protocol": "vmess",
-    "settings": {
-      "clients": []
-    },
-    "streamSettings": {
-      "network": "ws",
-      "security": "tls",
-      "tlsSettings": {
-        "certificates": [{
-          "certificateFile": "/etc/xray/xray.crt",
-          "keyFile": "/etc/xray/xray.key"
-        }]
-      },
-      "wsSettings": {
-        "path": "/vmess"
-      }
-    }
-  }],
-  "outbounds": [{
-    "protocol": "freedom"
-  }]
-}
-EOF
-
-# Service Xray
-cat > /etc/systemd/system/xray.service <<-EOF
-[Unit]
-Description=Xray Service
-After=network.target
-[Service]
-ExecStart=/usr/local/bin/xray -config /etc/xray/conf/10-vmess.json
-Restart=on-failure
-[Install]
-WantedBy=multi-user.target
-EOF
-
-systemctl daemon-reexec
-systemctl enable xray
-systemctl restart xray
-
-# ✅ UNDUH SEMUA FILE MENU
-echo "📥 Mengunduh file menu..."
-
-MENU_URL_BASE="https://raw.githubusercontent.com/NIKU1323/nikucloud-autoinstall/main/menu"
-
-declare -A MENUS=(
-    [menu]=menu.sh
-    [menu-ssh]=menu-ssh.sh
-    [menu-vmess]=menu-vmess.sh
-    [menu-vless]=menu-vless.sh
-    [menu-trojan]=menu-trojan.sh
-    [add-domain]=add-domain.sh
-)
-
-for key in "${!MENUS[@]}"; do
-    file="${MENUS[$key]}"
-    wget -q -O "/usr/bin/$key" "$MENU_URL_BASE/$file"
-    chmod +x "/usr/bin/$key"
-done
-
-echo ""
-echo "✅ INSTALASI LENGKAP SEMUA FITUR NIKU TUNNEL!"
-echo "🔁 Menjalankan menu utama..."
-sleep 1
-menu
+clear
+echo -e "\e[1;32m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\e[0m"
+echo -e "✅ INSTALASI SELESAI!"
+echo -e "🛡️  Jalankan menu: \e[1;36mmenu\e[0m"
+echo -e "🤖 Bot Telegram berjalan di background."
+echo -e "\e[1;32m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\e[0m"
+read -p "Reboot sekarang? (y/n): " rebootnow
+[[ $rebootnow == "y" || $rebootnow == "Y" ]] && reboot
