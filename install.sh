@@ -80,7 +80,7 @@ fi
 echo "🔁 Restart Xray untuk aktifkan SSL..."
 systemctl restart xray
 
-# Selesai
+# ✅ INSTALASI SELESAI
 clear
 echo "=========================================="
 echo "✅ INSTALASI NIKU TUNNEL SELESAI ✅"
@@ -90,3 +90,8 @@ echo "SSL Key      : /etc/xray/xray.key"
 echo "Menu Utama   : ketik menu"
 echo "Branding     : MERCURYVPN / NIKU TUNNEL"
 echo "=========================================="
+
+# AUTO MASUK MENU
+echo -e "\n🔁 Membuka menu utama..."
+sleep 1
+menu
