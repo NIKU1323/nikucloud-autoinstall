@@ -1,7 +1,6 @@
 #!/bin/bash
 # =============================================
-#         INSTALLER FINAL - NIKU TUNNEL
-#     Termasuk menu, domain, SSL otomatis
+#      INSTALLER FINAL NIKU TUNNEL (FOLDER menu)
 # =============================================
 
 clear
@@ -9,14 +8,14 @@ echo "🔧 Memulai instalasi dependensi..."
 apt update -y && apt upgrade -y
 apt install curl socat xz-utils wget unzip iptables iptables-persistent cron netcat -y
 
-# Salin semua file menu
+# Salin semua file menu dari folder menu/
 mkdir -p /usr/bin
-cp menussh.sh /usr/bin/
-cp menuvmess.sh /usr/bin/
-cp menuvless.sh /usr/bin/
-cp menutrojan.sh /usr/bin/
-cp add-domain.sh /usr/bin/
-cp menu.sh /usr/bin/menu
+cp menu/menussh.sh /usr/bin/
+cp menu/menuvmess.sh /usr/bin/
+cp menu/menuvless.sh /usr/bin/
+cp menu/menutrojan.sh /usr/bin/
+cp menu/add-domain.sh /usr/bin/
+cp menu/menu.sh /usr/bin/menu
 
 # Berikan izin eksekusi
 chmod +x /usr/bin/menussh.sh
@@ -26,7 +25,7 @@ chmod +x /usr/bin/menutrojan.sh
 chmod +x /usr/bin/add-domain.sh
 chmod +x /usr/bin/menu
 
-# (Opsional) Symlink jika ingin 'menu' bisa dipanggil dari terminal
+# (Opsional) symlink agar bisa ketik 'menu' dari terminal biasa
 ln -sf /usr/bin/menu /bin/menu
 
 # === DOMAIN INPUT ===
