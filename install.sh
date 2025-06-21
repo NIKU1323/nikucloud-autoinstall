@@ -1,6 +1,7 @@
 #!/bin/bash
 # =============================================
-# NIKU TUNNEL INSTALLER (Safe Menu Symlink)
+# NIKU TUNNEL INSTALLER - FINAL CLEAN VERSION
+# Tanpa symlink rusak & aman untuk GitHub
 # =============================================
 
 REPO="https://raw.githubusercontent.com/NIKU1323/nikucloud-autoinstall/main/menu"
@@ -9,8 +10,8 @@ echo "🔧 Memulai instalasi dependensi..."
 apt update -y && apt upgrade -y
 apt install curl socat xz-utils wget unzip iptables iptables-persistent cron netcat -y
 
-echo "🧹 Membersihkan symlink rusak..."
-rm -f /usr/bin/menu /bin/menu
+echo "🧹 Membersihkan file menu lama..."
+rm -f /usr/bin/menu
 
 echo "📥 Mengunduh file menu..."
 wget -q -O /usr/bin/menussh.sh $REPO/menussh.sh
@@ -28,8 +29,6 @@ chmod +x /usr/bin/menutrojan.sh
 chmod +x /usr/bin/add-domain.sh
 chmod +x /usr/bin/menu
 
-ln -sf /usr/bin/menu /bin/menu
-
 # Input domain
 echo -e "\n🌐 Masukkan domain yang sudah dipointing ke VPS:"
 read -p "Domain: " domain
@@ -39,7 +38,7 @@ if [[ -z $domain ]]; then
 fi
 echo "$domain" > /etc/xray/domain
 
-# Cek pointing
+# Cek pointing domain
 MYIP=$(curl -s ipv4.icanhazip.com)
 LOOKUP=$(ping -c1 $domain | head -1 | grep -oP '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+')
 
@@ -55,35 +54,35 @@ systemctl stop nginx >/dev/null 2>&1
 systemctl stop xray >/dev/null 2>&1
 systemctl stop apache2 >/dev/null 2>&1
 
-# Hapus cert lama
+# Hapus SSL lama
 rm -rf ~/.acme.sh/${domain}_ecc
 
 # Install acme.sh
-echo "⚙️  Install acme.sh..."
+echo "⚙️  Menginstal acme.sh..."
 curl https://acme-install.netlify.app/acme.sh -o acme.sh
 bash acme.sh --install
 rm -f acme.sh
 
 # Generate SSL
-echo "🚀 Issuing SSL untuk $domain..."
+echo "🚀 Membuat sertifikat SSL untuk $domain..."
 ~/.acme.sh/acme.sh --register-account -m admin@$domain
 ~/.acme.sh/acme.sh --issue -d $domain --standalone -k ec-256 --force
 
-# Validasi
+# Validasi SSL
 if [[ ! -f ~/.acme.sh/${domain}_ecc/fullchain.cer ]]; then
-  echo "❌ Gagal generate SSL cert."
+  echo "❌ Gagal generate SSL certificate."
   exit 1
 fi
 
-# Pasang cert
+# Pasang SSL
 ~/.acme.sh/acme.sh --install-cert -d $domain --ec \
 --fullchain-file /etc/xray/xray.crt \
 --key-file /etc/xray/xray.key
 
-# Restart xray
+# Restart Xray
 systemctl restart xray
 
-# Info
+# Output
 clear
 echo "=========================================="
 echo "✅ INSTALLASI SELESAI"
