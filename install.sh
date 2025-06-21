@@ -16,7 +16,7 @@ cp menuvmess.sh /usr/bin/
 cp menuvless.sh /usr/bin/
 cp menutrojan.sh /usr/bin/
 cp add-domain.sh /usr/bin/
-cp menu.sh /usr/bin/menu  # <- Ganti nama agar bisa dipanggil sebagai 'menu'
+cp menu.sh /usr/bin/menu
 
 # Berikan izin eksekusi
 chmod +x /usr/bin/menussh.sh
@@ -25,6 +25,9 @@ chmod +x /usr/bin/menuvless.sh
 chmod +x /usr/bin/menutrojan.sh
 chmod +x /usr/bin/add-domain.sh
 chmod +x /usr/bin/menu
+
+# Tambahkan symlink agar 'menu' dikenali secara global
+ln -sf /usr/bin/menu /bin/menu
 
 # === DOMAIN INPUT ===
 echo -e "\n🌐 Masukkan domain yang sudah dipointing ke VPS:"
