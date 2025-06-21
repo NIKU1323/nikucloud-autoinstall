@@ -97,116 +97,155 @@ def button_handler(update: Update, context: CallbackContext):
 def delete_ip(update: Update, context: CallbackContext):
     query = update.callback_query
     query.answer()
-    ip_to_delete = query.data.split(":")[1]
-    with open(ALLOWED_FILE) as f:
-        data = json.load(f)
-    data['allowed_ips'] = [entry for entry in data['allowed_ips'] if entry['ip'] != ip_to_delete]
-    with open(ALLOWED_FILE, 'w') as f:
-        json.dump(data, f, indent=2)
-    query.message.reply_text(f"✅ IP {ip_to_delete} berhasil dihapus.")
+#!/usr/bin/python3
+import json, os, logging
+from datetime import datetime, timedelta
+from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
+from telegram.ext import (
+    ApplicationBuilder, CommandHandler, MessageHandler, filters,
+    CallbackQueryHandler, ConversationHandler, ContextTypes
+)
 
-REG_IP, REG_NAME, REG_LIMIT = range(3)
+TOKEN = "ISI_TOKEN_BOT"
+ADMIN_ID = 123456789
+ALLOWED_JSON = "/var/www/html/allowed.json"
 
-def reg_ip(update: Update, context: CallbackContext):
-    context.user_data['ip'] = update.message.text
-    update.message.reply_text("🧾 Masukkan nama client:")
-    return REG_NAME
+logging.basicConfig(level=logging.INFO)
 
-def reg_name(update: Update, context: CallbackContext):
-    context.user_data['name'] = update.message.text
-    update.message.reply_text("📅 Masukkan durasi hari (7/15/30):")
-    return REG_LIMIT
+REGISTER_IP, REGISTER_CLIENT, REGISTER_LIMIT = range(3)
 
-def reg_limit(update: Update, context: CallbackContext):
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != ADMIN_ID: return
+    keyboard = [
+        [InlineKeyboardButton("📝 REGISTRASI IP", callback_data="register")],
+        [InlineKeyboardButton("📃 LIST IP", callback_data="list")],
+        [InlineKeyboardButton("🗑️ REMOVE IP", callback_data="remove")],
+        [InlineKeyboardButton("🔁 RENEW IP", callback_data="renew")],
+    ]
+    await update.message.reply_text("📡 *MENU REGISTRASI IP VPS*", parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard))
+
+async def menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    if update.effective_user.id != ADMIN_ID: return
+    if query.data == "register":
+        context.user_data["mode"] = "register"
+        await query.message.reply_text("📥 Masukkan IP VPS:")
+        return REGISTER_IP
+    elif query.data == "list":
+        if os.path.exists(ALLOWED_JSON):
+            with open(ALLOWED_JSON, "r") as f:
+                data = json.load(f)
+            if not data:
+                await query.message.reply_text("📂 Belum ada IP yang teregistrasi.")
+                return
+            msg = "📄 IP Teregistrasi:\n\n"
+            for entry in data:
+                msg += f"• `{entry['ip']}` | 📌 {entry['client']} | ⏳ {entry['expired']}\n"
+            await query.message.reply_text(msg, parse_mode="Markdown")
+        else:
+            await query.message.reply_text("❌ File allowed.json tidak ditemukan.")
+    elif query.data == "remove":
+        context.user_data["mode"] = "remove"
+        await query.message.reply_text("🗑️ Masukkan IP yang ingin dihapus:")
+        return REGISTER_IP
+    elif query.data == "renew":
+        context.user_data["mode"] = "renew"
+        await query.message.reply_text("♻️ Masukkan IP yang ingin diperpanjang:")
+        return REGISTER_IP
+
+async def handle_ip_based_on_mode(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    mode = context.user_data.get("mode")
+    if mode == "remove" or mode == "renew":
+        return await handle_remove_or_renew(update, context)
+    else:
+        return await handle_register_ip(update, context)
+
+async def handle_register_ip(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    context.user_data["ip"] = update.message.text.strip()
+    await update.message.reply_text("✏️ Masukkan nama client:")
+    return REGISTER_CLIENT
+
+async def handle_register_client(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    context.user_data["client"] = update.message.text.strip()
+    await update.message.reply_text("⏳ Masukkan masa aktif (hari):")
+    return REGISTER_LIMIT
+
+async def handle_register_limit(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    ip = context.user_data["ip"]
+    client = context.user_data["client"]
     try:
-        days = int(update.message.text)
-        if days not in [7, 15, 30]:
-            raise ValueError()
-    except:
-        update.message.reply_text("⚠️ Masukkan angka hari yang valid (7/15/30):")
-        return REG_LIMIT
-    expire_date = (datetime.now() + timedelta(days=days)).strftime('%Y-%m-%d')
-    new_entry = {
-        "ip": context.user_data['ip'],
-        "name": context.user_data['name'],
-        "expired": expire_date
-    }
-    with open(ALLOWED_FILE) as f:
-        data = json.load(f)
-    data['allowed_ips'].append(new_entry)
-    with open(ALLOWED_FILE, 'w') as f:
-        json.dump(data, f, indent=2)
-    update.message.reply_text(f"✅ IP {new_entry['ip']} berhasil diregistrasi hingga {expire_date}.")
+        days = int(update.message.text.strip())
+        expired = (datetime.now() + timedelta(days=days)).strftime("%Y-%m-%d")
+        data = []
+        if os.path.exists(ALLOWED_JSON):
+            with open(ALLOWED_JSON, "r") as f:
+                data = json.load(f)
+        data.append({"ip": ip, "client": client, "expired": expired})
+        with open(ALLOWED_JSON, "w") as f:
+            json.dump(data, f, indent=2)
+        await update.message.reply_text(f"✅ IP `{ip}` didaftarkan\n📌 {client} ⏳ {expired}", parse_mode="Markdown")
+    except Exception as e:
+        await update.message.reply_text(f"❌ Error: {e}")
     return ConversationHandler.END
 
-RENEW_IP, RENEW_LIMIT = range(2)
-
-def renew_ip(update: Update, context: CallbackContext):
-    context.user_data['renew_ip'] = update.message.text
-    update.message.reply_text("🕒 Masukkan durasi perpanjangan (7/15/30):")
-    return RENEW_LIMIT
-
-def renew_limit(update: Update, context: CallbackContext):
-    try:
-        days = int(update.message.text)
-        if days not in [7, 15, 30]:
-            raise ValueError()
-    except:
-        update.message.reply_text("⚠️ Masukkan angka hari yang valid (7/15/30):")
-        return RENEW_LIMIT
-    new_exp = (datetime.now() + timedelta(days=days)).strftime('%Y-%m-%d')
-    with open(ALLOWED_FILE) as f:
+async def handle_remove_or_renew(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    ip = update.message.text.strip()
+    if not os.path.exists(ALLOWED_JSON):
+        await update.message.reply_text("❌ File not found.")
+        return ConversationHandler.END
+    with open(ALLOWED_JSON, "r") as f:
         data = json.load(f)
     found = False
-    for entry in data['allowed_ips']:
-        if entry['ip'] == context.user_data['renew_ip']:
-            entry['expired'] = new_exp
+    for entry in data:
+        if entry["ip"] == ip:
             found = True
+            if context.user_data["mode"] == "remove":
+                data.remove(entry)
+                await update.message.reply_text(f"🗑️ IP `{ip}` dihapus.", parse_mode="Markdown")
+            elif context.user_data["mode"] == "renew":
+                context.user_data["renew_ip"] = ip
+                await update.message.reply_text("⏳ Masukkan tambahan hari:")
+                return REGISTER_LIMIT
             break
     if not found:
-        update.message.reply_text("❌ IP tidak ditemukan.")
-        return ConversationHandler.END
-    with open(ALLOWED_FILE, 'w') as f:
+        await update.message.reply_text("❌ IP tidak ditemukan.")
+    with open(ALLOWED_JSON, "w") as f:
         json.dump(data, f, indent=2)
-    update.message.reply_text(f"♻️ IP berhasil diperpanjang hingga {new_exp}.")
     return ConversationHandler.END
 
-def cancel(update: Update, context: CallbackContext):
-    update.message.reply_text("❌ Dibatalkan.")
+async def handle_renew_limit(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        days = int(update.message.text.strip())
+        ip = context.user_data["renew_ip"]
+        with open(ALLOWED_JSON, "r") as f:
+            data = json.load(f)
+        for entry in data:
+            if entry["ip"] == ip:
+                entry["expired"] = (datetime.now() + timedelta(days=days)).strftime("%Y-%m-%d")
+        with open(ALLOWED_JSON, "w") as f:
+            json.dump(data, f, indent=2)
+        await update.message.reply_text(f"♻️ IP `{ip}` diperpanjang.", parse_mode="Markdown")
+    except Exception as e:
+        await update.message.reply_text(f"❌ Gagal: {e}")
     return ConversationHandler.END
 
 def main():
-    init_allowed()
-    updater = Updater(token=TOKEN, use_context=True)
-    dp = updater.dispatcher
-
-    dp.add_handler(CommandHandler("start", start))
-    dp.add_handler(CallbackQueryHandler(button_handler, pattern="^(register|list|remove|renew)$"))
-    dp.add_handler(CallbackQueryHandler(delete_ip, pattern="^del:"))
-
-    dp.add_handler(ConversationHandler(
-        entry_points=[CallbackQueryHandler(button_handler, pattern='^register$')],
+    app = ApplicationBuilder().token(TOKEN).build()
+    conv_handler = ConversationHandler(
+        entry_points=[CallbackQueryHandler(menu_callback)],
         states={
-            REG_IP: [MessageHandler(Filters.text & ~Filters.command, reg_ip)],
-            REG_NAME: [MessageHandler(Filters.text & ~Filters.command, reg_name)],
-            REG_LIMIT: [MessageHandler(Filters.text & ~Filters.command, reg_limit)],
+            REGISTER_IP: [MessageHandler(filters.TEXT, handle_ip_based_on_mode)],
+            REGISTER_CLIENT: [MessageHandler(filters.TEXT, handle_register_client)],
+            REGISTER_LIMIT: [MessageHandler(filters.TEXT, handle_register_limit), MessageHandler(filters.TEXT, handle_renew_limit)],
         },
-        fallbacks=[CommandHandler('cancel', cancel)]
-    ))
+        fallbacks=[],
+    )
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(conv_handler)
+    app.run_polling()
 
-    dp.add_handler(ConversationHandler(
-        entry_points=[CallbackQueryHandler(button_handler, pattern='^renew$')],
-        states={
-            RENEW_IP: [MessageHandler(Filters.text & ~Filters.command, renew_ip)],
-            RENEW_LIMIT: [MessageHandler(Filters.text & ~Filters.command, renew_limit)],
-        },
-        fallbacks=[CommandHandler('cancel', cancel)]
-    ))
-
-    updater.start_polling()
-    updater.idle()
-
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
 EOF
 
