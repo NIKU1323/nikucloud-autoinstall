@@ -1,6 +1,6 @@
 #!/bin/bash
 # =============================================
-# NIKU TUNNEL INSTALLER - FIXED SYMLINK WGET
+# NIKU TUNNEL INSTALLER (Safe Menu Symlink)
 # =============================================
 
 REPO="https://raw.githubusercontent.com/NIKU1323/nikucloud-autoinstall/main/menu"
@@ -9,17 +9,15 @@ echo "🔧 Memulai instalasi dependensi..."
 apt update -y && apt upgrade -y
 apt install curl socat xz-utils wget unzip iptables iptables-persistent cron netcat -y
 
+echo "🧹 Membersihkan symlink rusak..."
+rm -f /usr/bin/menu /bin/menu
+
 echo "📥 Mengunduh file menu..."
 wget -q -O /usr/bin/menussh.sh $REPO/menussh.sh
 wget -q -O /usr/bin/menuvmess.sh $REPO/menuvmess.sh
 wget -q -O /usr/bin/menuvless.sh $REPO/menuvless.sh
 wget -q -O /usr/bin/menutrojan.sh $REPO/menutrojan.sh
 wget -q -O /usr/bin/add-domain.sh $REPO/add-domain.sh
-
-# Perbaiki symlink rusak dan salin menu utama
-echo "🧹 Menghapus symlink lama (jika ada)..."
-rm -f /usr/bin/menu /bin/menu
-
 wget -q -O /usr/bin/menu $REPO/menu.sh
 
 echo "🔐 Memberikan izin eksekusi..."
