@@ -1,102 +1,24 @@
 #!/bin/bash
-# INSTALLER BOT TELEGRAM REGISTRASI IP - NIKU TUNNEL (FINAL FIX)
 
-clear
-echo "🚀 Install bot Telegram registrasi IP..."
+# Folder bot
+BOT_DIR="/root/bot"
+ALLOWED_JSON="/var/www/html/allowed.json"
+SERVICE_FILE="/etc/systemd/system/bot.service"
 
-# =============== INPUT TOKEN & ADMIN ID ==================
-read -p "Masukkan Token Bot Telegram: " token
-read -p "Masukkan Admin ID Telegram: " admin_id
+echo "Starting install Telegram bot registrasi IP..."
 
-# =============== INSTALL PYTHON DEPENDENSI ===============
+# Update dan install python3-pip
 apt update -y
-apt install -y python3 python3-pip nginx curl
-pip3 install python-telegram-bot==13.15
+apt install -y python3 python3-pip
 
-mkdir -p /root/bot
-cd /root/bot
+# Buat folder bot
+mkdir -p $BOT_DIR
 
-# =============== SIMPAN config.json ======================
-cat > config.json << EOF
-{
-  "token": "$token",
-  "admin_id": $admin_id
-}
-EOF
+# Install python-telegram-bot versi stabil
+pip3 install python-telegram-bot==20.8
 
-# =============== SIMPAN bot.py ===========================
-cat > bot.py << 'EOF'
-import json
-import logging
-from datetime import datetime, timedelta
-from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
-from telegram.ext import Updater, CommandHandler, CallbackContext, MessageHandler, Filters, CallbackQueryHandler, ConversationHandler
-
-with open('config.json') as config_file:
-    config = json.load(config_file)
-
-TOKEN = config['token']
-ADMIN_ID = config['admin_id']
-ALLOWED_FILE = '/var/www/html/allowed.json'
-
-logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
-
-def init_allowed():
-    try:
-        with open(ALLOWED_FILE, 'r') as f:
-            data = json.load(f)
-        if 'allowed_ips' not in data:
-            raise ValueError("Format salah")
-    except:
-        with open(ALLOWED_FILE, 'w') as f:
-            json.dump({"allowed_ips": []}, f)
-
-def start(update: Update, context: CallbackContext):
-    if update.effective_user.id != ADMIN_ID:
-        return
-    keyboard = [
-        [InlineKeyboardButton("📥 Registrasi IP", callback_data='register')],
-        [InlineKeyboardButton("📄 List IP", callback_data='list')],
-        [InlineKeyboardButton("🗑️ Remove IP", callback_data='remove')],
-        [InlineKeyboardButton("♻️ Renew IP", callback_data='renew')]
-    ]
-    update.message.reply_text("🔧 MENU BOT REGISTRASI IP:", reply_markup=InlineKeyboardMarkup(keyboard))
-
-def button_handler(update: Update, context: CallbackContext):
-    query = update.callback_query
-    query.answer()
-    action = query.data
-
-    if action == 'register':
-        context.user_data.clear()
-        query.message.reply_text("📝 Masukkan IP VPS:")
-        return REG_IP
-    elif action == 'list':
-        with open(ALLOWED_FILE) as f:
-            data = json.load(f)
-        if not data['allowed_ips']:
-            query.message.reply_text("📭 Tidak ada IP yang terdaftar.")
-        else:
-            msg = "📄 IP Teregistrasi:\n"
-            for i, entry in enumerate(data['allowed_ips'], 1):
-                msg += f"{i}. {entry['ip']} ({entry['name']}) - Exp: {entry['expired']}\n"
-            query.message.reply_text(msg)
-    elif action == 'remove':
-        with open(ALLOWED_FILE) as f:
-            data = json.load(f)
-        if not data['allowed_ips']:
-            query.message.reply_text("📭 Tidak ada IP yang bisa dihapus.")
-            return
-        keyboard = [[InlineKeyboardButton(entry['ip'], callback_data=f"del:{entry['ip']}")] for entry in data['allowed_ips']]
-        query.message.reply_text("🗑️ Pilih IP yang ingin dihapus:", reply_markup=InlineKeyboardMarkup(keyboard))
-    elif action == 'renew':
-        context.user_data.clear()
-        query.message.reply_text("♻️ Masukkan IP yang ingin diperpanjang:")
-        return RENEW_IP
-
-def delete_ip(update: Update, context: CallbackContext):
-    query = update.callback_query
-    query.answer()
+# Buat bot.py dengan fix path config.json
+cat > $BOT_DIR/bot.py <<'EOF'
 #!/usr/bin/python3
 import json, os, logging
 from datetime import datetime, timedelta
@@ -106,11 +28,17 @@ from telegram.ext import (
     CallbackQueryHandler, ConversationHandler, ContextTypes
 )
 
-TOKEN = "ISI_TOKEN_BOT"
-ADMIN_ID = 123456789
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+CONFIG_PATH = os.path.join(BASE_DIR, "config.json")
 ALLOWED_JSON = "/var/www/html/allowed.json"
 
 logging.basicConfig(level=logging.INFO)
+
+with open(CONFIG_PATH) as config_file:
+    config = json.load(config_file)
+
+TOKEN = config.get("token", "")
+ADMIN_ID = config.get("admin_id", 0)
 
 REGISTER_IP, REGISTER_CLIENT, REGISTER_LIMIT = range(3)
 
@@ -249,37 +177,40 @@ if __name__ == "__main__":
     main()
 EOF
 
-# =============== BUAT allowed.json ========================
-mkdir -p /var/www/html
-cat > /var/www/html/allowed.json << EOF
+# Buat config.json default (ganti token dan admin_id sebelum pakai)
+cat > $BOT_DIR/config.json <<EOF
 {
-  "allowed_ips": []
+  "token": "ISI_TOKEN_BOT",
+  "admin_id": 123456789
 }
 EOF
 
-# =============== SYSTEMD bot.service ======================
-cat > /etc/systemd/system/bot.service << EOF
+# Buat allowed.json kosong di /var/www/html
+mkdir -p /var/www/html
+touch $ALLOWED_JSON
+echo "[]" > $ALLOWED_JSON
+chmod 666 $ALLOWED_JSON
+
+# Buat systemd service
+cat > $SERVICE_FILE <<EOF
 [Unit]
 Description=Telegram Bot Registrasi IP
 After=network.target
 
 [Service]
-ExecStart=/usr/bin/python3 /root/bot/bot.py
-WorkingDirectory=/root/bot
+ExecStart=/usr/bin/python3 $BOT_DIR/bot.py
+WorkingDirectory=$BOT_DIR
 Restart=always
-User=root
+RestartSec=5
 
 [Install]
 WantedBy=multi-user.target
 EOF
 
-# =============== AKTIFKAN BOT =============================
-systemctl daemon-reexec
+# Reload systemd dan enable service
 systemctl daemon-reload
-systemctl enable bot
-systemctl start bot
+systemctl enable bot.service
+systemctl restart bot.service
 
-# =============== SELESAI ===========================
-echo ""
-echo "✅ Bot Telegram berhasil dipasang dan aktif!"
-echo "🔎 Cek status dengan: systemctl status bot"
+echo "Install selesai! Jangan lupa edit $BOT_DIR/config.json untuk token dan admin_id."
+echo "Service bot sudah berjalan."
