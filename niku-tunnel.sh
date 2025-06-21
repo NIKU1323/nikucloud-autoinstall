@@ -1,53 +1,51 @@
 #!/bin/bash
 
-# =====================================
-#  NIKU TUNNEL – MERCURYVPN INSTALLER
-#  ALL-IN-ONE: XRAY + SSH + SSL + BOT
-# =====================================
+# NIKU TUNNEL – MERCURYVPN ALL-IN-ONE INSTALLER
+# SSH + VMESS + VLESS + TROJAN + SSL + BOT TELEGRAM + RESELLER
 
-# === Warna ===
+clear
 blue="\033[1;34m"
-green="\033[1;32m"
 red="\033[1;31m"
+green="\033[1;32m"
 yellow="\033[1;33m"
 cyan="\033[1;36m"
 plain="\033[0m"
 
-clear
-mkdir -p /etc/niku
-
-# ===== Konfigurasi BOT =====
+# ====== KONFIG BOT (ISI MANUAL) ======
 BOT_TOKEN="ISI_BOT_TOKEN_LO"
 ADMIN_ID="ISI_ADMIN_ID_LO"
 
-# ===== Input Domain =====
-echo -e "${green}[•] Masukkan domain kamu yang sudah dipointing ke VPS:${plain}"
-read -rp "Domain: " domain
+# ====== Cek dan pasang domain ======
+echo -ne "\nMasukkan domain (sudah di-pointing ke VPS): "; read DOMAIN
 mkdir -p /etc/niku
-echo "$domain" > /etc/niku/domain
+echo "$DOMAIN" > /etc/niku/domain
 
-# ===== Install Paket =====
-echo -e "${cyan}[•] Update & install dependensi...${plain}"
-apt update -y && apt upgrade -y
-apt install -y curl socat cron unzip wget git gnupg ca-certificates lsb-release python3 python3-pip netcat cron bash tar jq iptables iproute2 curl coreutils screen rsyslog gnupg2 lsof debconf-utils figlet dropbear stunnel4
+# ====== Install Dependensi Dasar ======
+echo -e "${cyan}[•] Install package dasar...${plain}"
+apt update -y && apt upgrade -y && apt install socat curl cron unzip wget git python3 python3-pip -y >/dev/null 2>&1
 
-# ===== Install SSL =====
+# ====== Pasang SSL Let's Encrypt ======
 echo -e "${cyan}[•] Pasang SSL Let's Encrypt...${plain}"
-curl https://get.acme.sh | sh
-~/.acme.sh/acme.sh --register-account -m admin@$domain --server zerossl
-~/.acme.sh/acme.sh --issue --standalone -d $domain --force --keylength ec-256
+curl https://get.acme.sh | sh >/dev/null 2>&1
+/root/.acme.sh/acme.sh --register-account -m admin@$DOMAIN >/dev/null 2>&1
+/root/.acme.sh/acme.sh --issue --standalone -d $DOMAIN --force --keylength ec-256 >/dev/null 2>&1
 mkdir -p /etc/xray
-~/.acme.sh/acme.sh --install-cert -d $domain --ecc \
+/root/.acme.sh/acme.sh --install-cert -d $DOMAIN --ecc \
 --key-file /etc/xray/key.pem \
---fullchain-file /etc/xray/cert.pem
+--fullchain-file /etc/xray/cert.pem >/dev/null 2>&1
 
-# ===== Install Xray Core =====
+# ====== Install SSH ======
+echo -e "${cyan}[•] Install SSH/Dropbear...${plain}"
+apt install dropbear stunnel4 -y >/dev/null 2>&1
+
+# ====== Install Xray Core ======
 echo -e "${cyan}[•] Install Xray Core...${plain}"
 mkdir -p /etc/xray && cd /etc/xray
 wget -q https://github.com/XTLS/Xray-core/releases/latest/download/Xray-linux-64.zip
-unzip -o Xray-linux-64.zip && chmod +x xray && mv xray /usr/local/bin/
+unzip -o Xray-linux-64.zip >/dev/null 2>&1
+chmod +x xray && mv xray /usr/local/bin/
 
-# ===== Buat Konfigurasi Xray =====
+# ====== Buat Konfigurasi Xray ======
 cat > /etc/xray/config.json << EOF
 {
   "log": { "loglevel": "none" },
@@ -105,7 +103,7 @@ cat > /etc/xray/config.json << EOF
 }
 EOF
 
-# ===== Aktifkan Xray =====
+# ====== Enable Service Xray ======
 cat > /etc/systemd/system/xray.service << EOF
 [Unit]
 Description=Xray Service
@@ -123,12 +121,12 @@ systemctl daemon-reload
 systemctl enable xray
 systemctl restart xray
 
-# ===== Bot Telegram + Reseller =====
+# ====== Setup BOT + RESELLER SYSTEM ======
 mkdir -p /etc/niku-bot
-pip3 install telebot
+pip3 install telebot >/dev/null 2>&1
 
 cat > /etc/niku-bot/bot.py << 'END'
-# (ISI SCRIPT BOT TELEGRAM DI SINI - SUDAH DIISI DI SEBELUMNYA)
+# ... (isi bot tetap sama seperti sebelumnya)
 END
 
 sed -i "s|BOT_TOKEN|$BOT_TOKEN|g" /etc/niku-bot/bot.py
@@ -151,18 +149,11 @@ systemctl daemon-reload
 systemctl enable niku-bot
 systemctl restart niku-bot
 
-# ===== SSH Basic Setting =====
-echo -e "${cyan}[•] Aktifkan SSH dan Dropbear...${plain}"
-echo "Port 22" > /etc/ssh/sshd_config
-systemctl restart ssh
-systemctl enable dropbear
-
-# ===== Alias Menu + Auto Jalankan Menu =====
+# ====== Tambahkan alias dan auto masuk menu ======
 cp "$0" /root/niku-tunnel.sh
-chmod +x /root/niku-tunnel.sh
-echo "alias menu='bash /root/niku-tunnel.sh'" >> ~/.bashrc
-source ~/.bashrc
+if ! grep -q "alias menu" ~/.bashrc; then
+  echo "alias menu='bash /root/niku-tunnel.sh'" >> ~/.bashrc
+fi
 
 clear
-echo -e "${green}✅ Instalasi selesai!${plain}"
-echo -e "Ketik ${yellow}menu${plain} untuk membuka panel."
+bash /root/niku-tunnel.sh
