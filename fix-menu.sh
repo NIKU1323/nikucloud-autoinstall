@@ -3,7 +3,7 @@
 # By: NIKU TUNNEL / MERCURYVPN
 
 REPO="https://raw.githubusercontent.com/NIKU1323/nikucloud-autoinstall/main/menu"
-FILES=("menussh.sh" "menuvmess.sh" "menuvless.sh" "menutrojan.sh" "add-domain.sh" "menu.sh")
+FILES=("menu-ssh.sh" "menu-vmess.sh" "menu-vless.sh" "menu-trojan.sh" "add-domain.sh" "menu.sh")
 
 echo "📥 Mengunduh & memperbaiki semua file menu dari GitHub..."
 
