@@ -1,57 +1,43 @@
 #!/bin/bash
-# ================================
-#     MENU TROJAN - NIKU TUNNEL
-# ================================
 clear
-echo "======================================"
-echo "       MENU TROJAN - MERCURYVPN       "
-echo "======================================"
-echo "1. Tambah Akun TROJAN"
-echo "2. Lihat Akun TROJAN"
-echo "3. Hapus Akun TROJAN"
-echo "4. Kembali ke Menu Utama"
-echo "======================================"
-read -p "Pilih opsi: " opt
+echo "======== CREATE TROJAN ACCOUNT ========"
+read -p "Username        : " user
+read -p "Masa aktif (hari): " masaaktif
+read -p "Limit IP         : " iplimit
+read -p "Limit Kuota (GB) : " kuota
 
+uuid=$(cat /proc/sys/kernel/random/uuid)
+exp=$(date -d "$masaaktif days" +"%Y-%m-%d")
 domain=$(cat /etc/xray/domain)
+porttls=443
+password=$uuid
 
-case $opt in
-1)
-  read -p "Username: " user
-  read -p "Masa aktif (hari): " masa
-  uuid=$(cat /proc/sys/kernel/random/uuid)
-  exp=$(date -d "$masa days" +"%Y-%m-%d")
+# Simpan info user
+echo "$user $exp" >> /etc/xray/akun-trojan.conf
+mkdir -p /etc/xray/quota /etc/xray/iplimit
+let "bytes = $kuota * 1024 * 1024 * 1024"
+echo "$bytes" > /etc/xray/quota/$user
+echo "$iplimit" > /etc/xray/iplimit/$user
 
-  cat >> /etc/xray/config.json <<EOF
-  ,
-  {
-    "password": "$uuid",
-    "email": "$user"
-  }
-EOF
+# Restart service
+systemctl restart xray
 
-  systemctl restart xray
+# Link
+link="trojan://${password}@${domain}:${porttls}?sni=${domain}&type=ws&security=tls&host=${domain}&path=/trojan#$user"
 
-  trojanlink="trojan://${uuid}@${domain}:443?type=ws&security=tls&path=/trojan&host=${domain}#${user}"
-
-  echo "Akun TROJAN TLS berhasil dibuat!"
-  echo "Expired : $exp"
-  echo "Link    : $trojanlink"
-  ;;
-2)
-  echo "Daftar akun TROJAN:"
-  grep email /etc/xray/config.json | grep -oE '[a-zA-Z0-9_.@-]+'
-  ;;
-3)
-  read -p "Username yang akan dihapus: " user
-  sed -i "/\"email\": \"$user\"/d" /etc/xray/config.json
-  systemctl restart xray
-  echo "Akun $user dihapus dari TROJAN."
-  ;;
-4)
-  menu
-  ;;
-*)
-  echo "Pilihan tidak valid!"
-  ;;
-esac
+# Output
+clear
+echo "===== TROJAN ACCOUNT CREATED ====="
+echo "Username : $user"
+echo "Expired  : $exp"
+echo "Domain   : $domain"
+echo "Port TLS : $porttls"
+echo "Password : $password"
+echo "Limit IP : $iplimit"
+echo "Kuota GB : $kuota"
+echo "Link     :"
+echo "$link"
+echo "=================================="
+echo ""
+read -n 1 -s -r -p "Tekan tombol apapun untuk kembali..."
+menu
