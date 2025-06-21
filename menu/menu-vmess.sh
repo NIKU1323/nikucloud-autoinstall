@@ -1,74 +1,95 @@
 #!/bin/bash
-# ================================
-#       MENU VMESS - NIKU TUNNEL
-# ================================
 clear
-echo "======================================"
-echo "       MENU VMESS - MERCURYVPN        "
-echo "======================================"
-echo "1. Tambah Akun VMESS"
-echo "2. Lihat Akun VMESS"
-echo "3. Hapus Akun VMESS"
-echo "4. Kembali ke Menu Utama"
-echo "======================================"
-read -p "Pilih opsi: " opt
+echo "========= CREATE VMESS ACCOUNT ========="
+read -p "Username        : " user
+read -p "Masa aktif (hari): " masaaktif
+read -p "Limit IP         : " iplimit
+read -p "Limit Kuota (GB) : " kuota
 
+uuid=$(cat /proc/sys/kernel/random/uuid)
+exp=$(date -d "$masaaktif days" +"%Y-%m-%d")
 domain=$(cat /etc/xray/domain)
+porttls=443
+path="/vmess"
+userconf="/etc/xray/vmess-$user.json"
 
-case $opt in
-1)
-  read -p "Username: " user
-  read -p "Masa aktif (hari): " masa
-  uuid=$(cat /proc/sys/kernel/random/uuid)
-  exp=$(date -d "$masa days" +"%Y-%m-%d")
-
-  cat >> /etc/xray/config.json <<EOF
-  ,
-  {
-    "id": "$uuid",
-    "alterId": 0,
-    "email": "$user"
-  }
-EOF
-
-  systemctl restart xray
-
-  vmesslink=$(cat <<EOF
+# Buat config
+cat > $userconf <<EOF
 {
-  "v": "2",
-  "ps": "$user",
-  "add": "$domain",
-  "port": "443",
-  "id": "$uuid",
-  "aid": "0",
-  "net": "ws",
-  "path": "/vmess",
-  "type": "none",
-  "host": "$domain",
-  "tls": "tls"
+  "inbounds": [],
+  "outbounds": [],
+  "clients": [
+    {
+      "id": "$uuid",
+      "alterId": 0,
+      "email": "$user"
+    }
+  ]
 }
 EOF
-  )
 
-  link="vmess://$(echo "$vmesslink" | base64 -w0)"
-  echo "Akun VMESS TLS berhasil dibuat!"
-  echo "Expired : $exp"
-  echo "Link    : $link"
-  ;;
-2)
-  echo "Daftar akun VMESS:"
-  grep email /etc/xray/config.json | cut -d '"' -f4
-  ;;
-3)
-  read -p "Username yang akan dihapus: " user
-  sed -i "/\"email\": \"$user\"/d" /etc/xray/config.json
-  systemctl restart xray
-  echo "Akun $user dihapus dari VMESS."
-  ;;
-4)
-  menu
-  ;;
-*)
-  echo "Pilihan tidak valid!"
-  ;;
-esac
+# Generate config xray
+cat > /etc/xray/config.json <<EOF
+{
+  "log": { "loglevel": "info" },
+  "inbounds": [{
+    "port": $porttls,
+    "protocol": "vmess",
+    "settings": {
+      "clients": [
+        {
+          "id": "$uuid",
+          "alterId": 0,
+          "email": "$user"
+        }
+      ]
+    },
+    "streamSettings": {
+      "network": "ws",
+      "wsSettings": {
+        "path": "$path"
+      },
+      "security": "tls",
+      "tlsSettings": {
+        "certificates": [
+          {
+            "certificateFile": "/etc/xray/xray.crt",
+            "keyFile": "/etc/xray/xray.key"
+          }
+        ]
+      }
+    }
+  }],
+  "outbounds": [{ "protocol": "freedom" }]
+}
+EOF
+
+# Restart service
+systemctl restart xray
+
+# Simpan data
+mkdir -p /etc/xray/quota /etc/xray/iplimit
+let "bytes = $kuota * 1024 * 1024 * 1024"
+echo "$bytes" > /etc/xray/quota/$user
+echo "$iplimit" > /etc/xray/iplimit/$user
+echo "$user $exp" >> /etc/xray/akun-vmess.conf
+
+# Config link
+link="vmess://$(echo -n "{\"v\":\"2\",\"ps\":\"$user\",\"add\":\"$domain\",\"port\":\"$porttls\",\"id\":\"$uuid\",\"aid\":\"0\",\"net\":\"ws\",\"path\":\"$path\",\"type\":\"none\",\"host\":\"$domain\",\"tls\":\"tls\"}" | base64 -w 0)"
+
+# Tampilkan hasil
+clear
+echo "===== VMESS ACCOUNT CREATED ====="
+echo "Username : $user"
+echo "Expired  : $exp"
+echo "Domain   : $domain"
+echo "Port TLS : $porttls"
+echo "ID       : $uuid"
+echo "Limit IP : $iplimit"
+echo "Kuota GB : $kuota"
+echo "Link     :"
+echo "$link"
+echo "================================="
+echo ""
+read -n 1 -s -r -p "Tekan tombol apapun untuk kembali..."
+menu
