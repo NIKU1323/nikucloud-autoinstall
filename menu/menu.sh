@@ -12,10 +12,10 @@ echo "0. Keluar"
 echo "======================================="
 read -p "Pilih opsi: " opt
 case $opt in
-1) menussh ;;
-2) menuvmess ;;
-3) menuvless ;;
-4) menutrojan ;;
+1) menu-ssh ;;
+2) menu-vmess ;;
+3) menu-vless ;;
+4) menu-trojan ;;
 5) add-domain ;;
 0) exit ;;
 *) echo "Opsi tidak valid!" && sleep 1 && menu ;;
