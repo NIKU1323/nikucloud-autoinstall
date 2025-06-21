@@ -22,18 +22,15 @@ echo "$DOMAIN" > /etc/niku/domain
 
 # ====== Install Dependensi Dasar ======
 echo -e "${cyan}[•] Install package dasar...${plain}"
-apt update -y && apt upgrade -y && apt install socat curl cron unzip wget git python3 python3-pip -y >/dev/null 2>&1
+apt update -y && apt upgrade -y && apt install socat curl cron unzip wget git python3 python3-pip net-tools -y >/dev/null 2>&1
 
 # ====== Pasang SSL Let's Encrypt ======
 echo -e "${cyan}[•] Pasang SSL Let's Encrypt...${plain}"
 curl https://get.acme.sh | sh >/dev/null 2>&1
 ~/.acme.sh/acme.sh --register-account -m admin@$DOMAIN >/dev/null 2>&1
-
-# Hentikan semua yang ganggu port 80
 systemctl stop xray >/dev/null 2>&1
 lsof -t -i :80 | xargs -r kill -9
 sleep 2
-
 ~/.acme.sh/acme.sh --issue --standalone -d $DOMAIN --force --keylength ec-256
 mkdir -p /etc/xray
 ~/.acme.sh/acme.sh --install-cert -d $DOMAIN --ecc \
@@ -156,7 +153,7 @@ systemctl enable niku-bot
 systemctl restart niku-bot
 
 # ====== Buat File Menu Manual ======
-cat > /root/menu.sh << MENU
+cat > /root/menu.sh << 'MENU'
 #!/bin/bash
 clear
 echo -e "\033[1;32m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\033[0m"
@@ -166,40 +163,51 @@ echo -e "1. Cek status layanan"
 echo -e "2. Restart layanan bot"
 echo -e "3. Restart layanan Xray"
 echo -e "4. Tampilkan log Xray"
-echo -e "5. Keluar"
+echo -e "5. Buat akun SSH"
+echo -e "6. Buat akun VMESS"
+echo -e "7. Buat akun VLESS"
+echo -e "8. Buat akun TROJAN"
+echo -e "9. Keluar"
 echo -e "\033[1;32m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\033[0m"
-read -p "Pilih opsi [1-5]: " pilih
-case $pilih in
-  1)
-    systemctl status xray | head -n 10
-    systemctl status niku-bot | head -n 10
-    ;;
-  2)
-    systemctl restart niku-bot && echo "✅ Bot berhasil direstart"
-    ;;
-  3)
-    systemctl restart xray && echo "✅ Xray berhasil direstart"
-    ;;
-  4)
-    journalctl -u xray --no-pager | tail -n 20
-    ;;
+read -rp "Pilih opsi [1-9]: " pilih
+case "$pilih" in
+  1) systemctl status xray | head -n 10 && systemctl status niku-bot | head -n 10 ;;
+  2) systemctl restart niku-bot && echo "✅ Bot berhasil direstart" ;;
+  3) systemctl restart xray && echo "✅ Xray berhasil direstart" ;;
+  4) journalctl -u xray --no-pager | tail -n 20 ;;
   5)
-    exit
+    read -p "Username SSH: " user
+    read -p "Durasi hari: " exp
+    useradd -e $(date -d "+$exp days" +%Y-%m-%d) -s /bin/false -M $user
+    echo -e "$user
+123" | passwd $user >/dev/null 2>&1
+    echo "✅ SSH berhasil dibuat untuk $user, password: 123"
     ;;
+  6)
+    read -p "Username: " user
+    read -p "Durasi hari: " exp
+    uuid=$(cat /proc/sys/kernel/random/uuid)
+    exp_date=$(date -d "+$exp days" +%Y-%m-%d)
+    domain=$(cat /etc/niku/domain)
+    echo "{\"id\":\"$uuid\",\"alterId\":0,\"email\":\"$user\"}," >> /etc/xray/config.json
+    systemctl restart xray
+    echo "✅ VMESS dibuat untuk $user (expired: $exp hari)"
+    ;;
+  7)
+    echo "(Coming soon: VLESS manual creation)" ;;
+  8)
+    echo "(Coming soon: TROJAN manual creation)" ;;
+  9)
+    exit ;;
   *)
-    echo "❌ Pilihan tidak valid."
-    ;;
+    echo "❌ Pilihan tidak valid." ;;
 esac
 MENU
 
 chmod +x /root/menu.sh
-
-# ====== Tambahkan alias menu ke ~/.bashrc ======
 sed -i '/alias menu=/d' ~/.bashrc
 echo "alias menu='bash /root/menu.sh'" >> ~/.bashrc
 source ~/.bashrc
 
-# Tampilkan pesan sukses
-clear
-echo -e "\n\033[1;32m✅ Instalasi selesai!\033[0m"
-echo -e "Ketik \033[1;33mmenu\033[0m untuk membuka panel."
+# Jalankan menu
+bash /root/menu.sh
