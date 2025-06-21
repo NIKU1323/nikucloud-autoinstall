@@ -14,7 +14,7 @@ echo "📥 Mengunduh semua file menu..."
 mkdir -p /tmp/menu-download
 cd /tmp/menu-download
 
-FILES=("menussh.sh" "menuvmess.sh" "menuvless.sh" "menutrojan.sh" "add-domain.sh" "menu.sh")
+FILES=("menu-ssh.sh" "menu-vmess.sh" "menu-vless.sh" "menu-trojan.sh" "add-domain.sh" "menu.sh")
 
 for file in "${FILES[@]}"; do
   wget -q -O "$file" "$REPO/$file"
