@@ -1,11 +1,11 @@
 #!/bin/bash
 # AUTO FIX MENU FILES VIA GITHUB
-# By NIKU TUNNEL / MERCURYVPN
+# By: NIKU TUNNEL / MERCURYVPN
 
 REPO="https://raw.githubusercontent.com/NIKU1323/nikucloud-autoinstall/main/menu"
 FILES=("menussh.sh" "menuvmess.sh" "menuvless.sh" "menutrojan.sh" "add-domain.sh" "menu.sh")
 
-echo "📥 Mengunduh & memperbaiki semua file menu..."
+echo "📥 Mengunduh & memperbaiki semua file menu dari GitHub..."
 
 for file in "${FILES[@]}"; do
   dst="/usr/bin/${file%.sh}"
