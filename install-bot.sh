@@ -35,7 +35,7 @@ with open(CONFIG_PATH) as config_file:
 TOKEN = config.get("token", "")
 ADMIN_ID = config.get("admin_id", 0)
 
-REGISTER_IP, REGISTER_CLIENT, REGISTER_LIMIT = range(3)
+REGISTER_IP, REGISTER_CLIENT, REGISTER_LIMIT, RENEW_LIMIT = range(4)
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
@@ -107,7 +107,6 @@ async def handle_register_limit(update: Update, context: ContextTypes.DEFAULT_TY
         if os.path.exists(ALLOWED_JSON):
             with open(ALLOWED_JSON, "r") as f:
                 data = json.load(f)
-        # Jika IP sudah ada, update client & expired
         updated = False
         for entry in data:
             if entry["ip"] == ip:
@@ -146,12 +145,12 @@ async def handle_remove_or_renew(update: Update, context: ContextTypes.DEFAULT_T
             elif context.user_data["mode"] == "renew":
                 context.user_data["renew_ip"] = ip
                 await update.message.reply_text("⏳ Masukkan tambahan hari:")
-                return REGISTER_LIMIT
+                return RENEW_LIMIT
             break
 
     if not found:
         await update.message.reply_text("❌ IP tidak ditemukan.")
-        return ConversationHandler.END
+    return ConversationHandler.END
 
 async def handle_renew_limit(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
@@ -176,10 +175,8 @@ def main():
         states={
             REGISTER_IP: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_ip_based_on_mode)],
             REGISTER_CLIENT: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_register_client)],
-            REGISTER_LIMIT: [
-                MessageHandler(filters.TEXT & ~filters.COMMAND, handle_register_limit),
-                MessageHandler(filters.TEXT & ~filters.COMMAND, handle_renew_limit),
-            ],
+            REGISTER_LIMIT: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_register_limit)],
+            RENEW_LIMIT: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_renew_limit)],
         },
         fallbacks=[],
     )
