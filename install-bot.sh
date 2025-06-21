@@ -1,23 +1,18 @@
 #!/bin/bash
 
-# Folder bot
 BOT_DIR="/root/bot"
 ALLOWED_JSON="/var/www/html/allowed.json"
 SERVICE_FILE="/etc/systemd/system/bot.service"
 
 echo "Starting install Telegram bot registrasi IP..."
 
-# Update dan install python3-pip
 apt update -y
 apt install -y python3 python3-pip
 
-# Buat folder bot
 mkdir -p $BOT_DIR
 
-# Install python-telegram-bot versi stabil
 pip3 install python-telegram-bot==20.8
 
-# Buat bot.py dengan fix path config.json
 cat > $BOT_DIR/bot.py <<'EOF'
 #!/usr/bin/python3
 import json, os, logging
@@ -43,7 +38,8 @@ ADMIN_ID = config.get("admin_id", 0)
 REGISTER_IP, REGISTER_CLIENT, REGISTER_LIMIT = range(3)
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user.id != ADMIN_ID: return
+    if update.effective_user.id != ADMIN_ID:
+        return
     keyboard = [
         [InlineKeyboardButton("📝 REGISTRASI IP", callback_data="register")],
         [InlineKeyboardButton("📃 LIST IP", callback_data="list")],
@@ -55,7 +51,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-    if update.effective_user.id != ADMIN_ID: return
+    if update.effective_user.id != ADMIN_ID:
+        return
     if query.data == "register":
         context.user_data["mode"] = "register"
         await query.message.reply_text("📥 Masukkan IP VPS:")
@@ -66,13 +63,14 @@ async def menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 data = json.load(f)
             if not data:
                 await query.message.reply_text("📂 Belum ada IP yang teregistrasi.")
-                return
+                return ConversationHandler.END
             msg = "📄 IP Teregistrasi:\n\n"
             for entry in data:
                 msg += f"• `{entry['ip']}` | 📌 {entry['client']} | ⏳ {entry['expired']}\n"
             await query.message.reply_text(msg, parse_mode="Markdown")
         else:
             await query.message.reply_text("❌ File allowed.json tidak ditemukan.")
+        return ConversationHandler.END
     elif query.data == "remove":
         context.user_data["mode"] = "remove"
         await query.message.reply_text("🗑️ Masukkan IP yang ingin dihapus:")
@@ -109,7 +107,16 @@ async def handle_register_limit(update: Update, context: ContextTypes.DEFAULT_TY
         if os.path.exists(ALLOWED_JSON):
             with open(ALLOWED_JSON, "r") as f:
                 data = json.load(f)
-        data.append({"ip": ip, "client": client, "expired": expired})
+        # Jika IP sudah ada, update client & expired
+        updated = False
+        for entry in data:
+            if entry["ip"] == ip:
+                entry["client"] = client
+                entry["expired"] = expired
+                updated = True
+                break
+        if not updated:
+            data.append({"ip": ip, "client": client, "expired": expired})
         with open(ALLOWED_JSON, "w") as f:
             json.dump(data, f, indent=2)
         await update.message.reply_text(f"✅ IP `{ip}` didaftarkan\n📌 {client} ⏳ {expired}", parse_mode="Markdown")
@@ -122,25 +129,29 @@ async def handle_remove_or_renew(update: Update, context: ContextTypes.DEFAULT_T
     if not os.path.exists(ALLOWED_JSON):
         await update.message.reply_text("❌ File not found.")
         return ConversationHandler.END
+
     with open(ALLOWED_JSON, "r") as f:
         data = json.load(f)
+
     found = False
     for entry in data:
         if entry["ip"] == ip:
             found = True
             if context.user_data["mode"] == "remove":
                 data.remove(entry)
-                await update.message.reply_text(f"🗑️ IP `{ip}` dihapus.", parse_mode="Markdown")
+                with open(ALLOWED_JSON, "w") as f:
+                    json.dump(data, f, indent=2)
+                await update.message.reply_text(f"🗑️ IP `{ip}` berhasil dihapus.", parse_mode="Markdown")
+                return ConversationHandler.END
             elif context.user_data["mode"] == "renew":
                 context.user_data["renew_ip"] = ip
                 await update.message.reply_text("⏳ Masukkan tambahan hari:")
                 return REGISTER_LIMIT
             break
+
     if not found:
         await update.message.reply_text("❌ IP tidak ditemukan.")
-    with open(ALLOWED_JSON, "w") as f:
-        json.dump(data, f, indent=2)
-    return ConversationHandler.END
+        return ConversationHandler.END
 
 async def handle_renew_limit(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
@@ -163,9 +174,12 @@ def main():
     conv_handler = ConversationHandler(
         entry_points=[CallbackQueryHandler(menu_callback)],
         states={
-            REGISTER_IP: [MessageHandler(filters.TEXT, handle_ip_based_on_mode)],
-            REGISTER_CLIENT: [MessageHandler(filters.TEXT, handle_register_client)],
-            REGISTER_LIMIT: [MessageHandler(filters.TEXT, handle_register_limit), MessageHandler(filters.TEXT, handle_renew_limit)],
+            REGISTER_IP: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_ip_based_on_mode)],
+            REGISTER_CLIENT: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_register_client)],
+            REGISTER_LIMIT: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, handle_register_limit),
+                MessageHandler(filters.TEXT & ~filters.COMMAND, handle_renew_limit),
+            ],
         },
         fallbacks=[],
     )
@@ -177,7 +191,6 @@ if __name__ == "__main__":
     main()
 EOF
 
-# Buat config.json default (ganti token dan admin_id sebelum pakai)
 cat > $BOT_DIR/config.json <<EOF
 {
   "token": "ISI_TOKEN_BOT",
@@ -185,13 +198,11 @@ cat > $BOT_DIR/config.json <<EOF
 }
 EOF
 
-# Buat allowed.json kosong di /var/www/html
 mkdir -p /var/www/html
 touch $ALLOWED_JSON
 echo "[]" > $ALLOWED_JSON
 chmod 666 $ALLOWED_JSON
 
-# Buat systemd service
 cat > $SERVICE_FILE <<EOF
 [Unit]
 Description=Telegram Bot Registrasi IP
@@ -207,7 +218,6 @@ RestartSec=5
 WantedBy=multi-user.target
 EOF
 
-# Reload systemd dan enable service
 systemctl daemon-reload
 systemctl enable bot.service
 systemctl restart bot.service
