@@ -26,7 +26,7 @@ chmod +x /usr/bin/menutrojan.sh
 chmod +x /usr/bin/add-domain.sh
 chmod +x /usr/bin/menu
 
-# Tambahkan symlink agar 'menu' dikenali secara global
+# (Opsional) Symlink jika ingin 'menu' bisa dipanggil dari terminal
 ln -sf /usr/bin/menu /bin/menu
 
 # === DOMAIN INPUT ===
@@ -101,4 +101,4 @@ echo "=========================================="
 # AUTO MASUK MENU
 echo -e "\n🔁 Membuka menu utama..."
 sleep 1
-menu
+bash /usr/bin/menu
