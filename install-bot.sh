@@ -1,7 +1,36 @@
-#!/usr/bin/env python3
-# bot.py - Telegram Bot Registrasi IP VPS
+#!/bin/bash
+# INSTALL BOT TELEGRAM REGISTRASI IP VPS
 # Author: MERCURYVPN / NIKU TUNNEL
 
+clear
+echo -e "\e[32m[•] Install Bot Telegram Registrasi IP VPS...\e[0m"
+
+# Buat folder
+mkdir -p /root/bot
+
+# Install pip & dependensi python
+apt update -y
+apt install -y python3-pip
+pip3 install --upgrade pip
+pip3 install python-telegram-bot==20.3
+
+# === FILE: /root/bot/config.json ===
+cat > /root/bot/config.json <<EOF
+{
+  "token": "ISI_TOKEN_BOT_ANDA",
+  "admin_id": 123456789,
+  "allowed_file": "/root/bot/allowed.json"
+}
+EOF
+
+# === FILE: /root/bot/allowed.json ===
+cat > /root/bot/allowed.json <<EOF
+[]
+EOF
+
+# === FILE: /root/bot/bot.py ===
+cat > /root/bot/bot.py <<'EOF'
+#!/usr/bin/env python3
 import json, logging
 from datetime import datetime, timedelta
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
@@ -15,10 +44,8 @@ from telegram.ext import (
     ConversationHandler,
 )
 
-# Logging untuk melihat error
 logging.basicConfig(level=logging.INFO)
 
-# Load config
 with open("/root/bot/config.json") as f:
     config = json.load(f)
 
@@ -28,7 +55,6 @@ FILE = config["allowed_file"]
 
 data_temp = {}
 
-# Fungsi bantu
 def save(data):
     with open(FILE, "w") as f:
         json.dump(data, f, indent=2)
@@ -43,21 +69,21 @@ def find_ip(data, ip):
             return i
     return -1
 
-# Start command
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
         return
     keyboard = [
         [InlineKeyboardButton("➕ Tambah IP", callback_data="addip")],
         [InlineKeyboardButton("📄 List IP", callback_data="listip")],
-        [InlineKeyboardButton("✏️ Edit Client", callback_data="editclient"),
-         InlineKeyboardButton("🔁 Renew Expired", callback_data="renewip")],
+        [
+            InlineKeyboardButton("✏️ Edit Client", callback_data="editclient"),
+            InlineKeyboardButton("🔁 Renew Expired", callback_data="renewip")
+        ],
         [InlineKeyboardButton("🗑️ Hapus IP", callback_data="removeip")],
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     await update.message.reply_text("🤖 Silakan pilih menu:", reply_markup=reply_markup)
 
-# Menu handler
 async def handle_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -77,7 +103,6 @@ async def handle_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text("🗑️ Kirim IP yang mau dihapus:")
         return 30
 
-# Tambah IP
 async def get_ip(update: Update, context: ContextTypes.DEFAULT_TYPE):
     data_temp["ip"] = update.message.text.strip()
     await update.message.reply_text("✍️ Kirim nama client:")
@@ -85,7 +110,7 @@ async def get_ip(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def get_client(update: Update, context: ContextTypes.DEFAULT_TYPE):
     data_temp["client"] = update.message.text.strip()
-    await update.message.reply_text("🕐 Kirim expired (format: jumlah hari atau YYYY-MM-DD):")
+    await update.message.reply_text("🕐 Kirim expired (jumlah hari atau YYYY-MM-DD):")
     return 3
 
 async def get_expired(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -109,7 +134,6 @@ async def get_expired(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(f"✅ IP {ip} ditambahkan.\nClient: {client}\nExpired: {exp}")
     return ConversationHandler.END
 
-# Tampilkan IP (khusus callback query)
 async def listip_query(query, context):
     data = load()
     if not data:
@@ -121,7 +145,6 @@ async def listip_query(query, context):
     await query.edit_message_text(msg)
     return ConversationHandler.END
 
-# Edit Client
 async def get_ip_edit(update: Update, context: ContextTypes.DEFAULT_TYPE):
     data_temp["ip"] = update.message.text.strip()
     await update.message.reply_text("🆕 Kirim nama client baru:")
@@ -139,7 +162,6 @@ async def get_client_edit(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(f"✅ Client IP {data_temp['ip']} diubah ke {new_client}.")
     return ConversationHandler.END
 
-# Renew Expired
 async def get_ip_renew(update: Update, context: ContextTypes.DEFAULT_TYPE):
     data_temp["ip"] = update.message.text.strip()
     await update.message.reply_text("⏳ Kirim jumlah hari perpanjangan atau YYYY-MM-DD:")
@@ -166,7 +188,6 @@ async def get_exp_renew(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(f"✅ Expired IP {ip} diperpanjang ke {exp}.")
     return ConversationHandler.END
 
-# Hapus IP
 async def get_ip_remove(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ip = update.message.text.strip()
     data = load()
@@ -179,10 +200,8 @@ async def get_ip_remove(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(f"🗑️ IP {ip} berhasil dihapus.")
     return ConversationHandler.END
 
-# Main bot
 def main():
     app = ApplicationBuilder().token(TOKEN).build()
-
     conv = ConversationHandler(
         entry_points=[CallbackQueryHandler(handle_menu)],
         states={
@@ -198,13 +217,38 @@ def main():
         fallbacks=[],
         per_message=True,
     )
-
     app.add_handler(CommandHandler("start", start))
     app.add_handler(conv)
-
     print("✅ Bot polling dimulai...")
     app.run_polling()
 
 if __name__ == "__main__":
     main()
-    
+EOF
+
+# === FILE: /etc/systemd/system/bot.service ===
+cat > /etc/systemd/system/bot.service <<EOF
+[Unit]
+Description=Bot Telegram Registrasi IP
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 /root/bot/bot.py
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+# Set permission
+chmod +x /root/bot/bot.py
+
+# Enable & start service
+systemctl daemon-reexec
+systemctl daemon-reload
+systemctl enable bot
+systemctl restart bot
+
+echo -e "\e[32m✅ BOT TELEGRAM SIAP DIGUNAKAN!\e[0m"
+echo -e "\e[33mSilakan edit /root/bot/config.json dan isi token serta admin_id Anda.\e[0m"
