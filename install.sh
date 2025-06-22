@@ -65,20 +65,40 @@ EOF
 systemctl enable badvpn
 systemctl start badvpn
 
-# SSL Let's Encrypt via ACME
-log_info "Memasang SSL via ACME..."
-curl https://acme-install.netlify.app/acme.sh | sh
-~/.acme.sh/acme.sh --issue -d $DOMAIN --standalone -k ec-256
-~/.acme.sh/acme.sh --install-cert -d $DOMAIN --ecc \
-  --key-file /etc/xray/key.pem \
-  --fullchain-file /etc/xray/cert.pem
+# ======================= SSL Let's Encrypt via ACME ========================
+log_info "Memasang SSL Let's Encrypt via ACME..."
 
-# Install Xray
-log_info "Install Xray Core..."
+# Unduh dan pasang ACME
+curl https://acme-install.netlify.app/acme.sh | sh
+
+# Issue sertifikat dengan ACME (standalone mode, ECC 256-bit)
+~/.acme.sh/acme.sh --issue -d $DOMAIN --standalone -k ec-256
+
+# Simpan path sertifikat & key sementara
+CERT_PATH="/root/.acme.sh/$DOMAIN_ecc/fullchain.cer"
+KEY_PATH="/root/.acme.sh/$DOMAIN_ecc/$DOMAIN.key"
+
+# Tampilkan ringkasan cert
+log_success "✅ Sertifikat berhasil dibuat untuk $DOMAIN!"
+echo -e "${YELLOW}Cuplikan isi cert:${NC}"
+head -n 5 "$CERT_PATH"
+
+# ========================== INSTALL XRAY CORE =============================
+log_info "Menginstall Xray Core..."
+
 mkdir -p /etc/xray /var/log/xray
+
 UUID=$(cat /proc/sys/kernel/random/uuid)
 echo "$UUID" > /etc/xray/uuid
+echo "$DOMAIN" > /etc/xray/domain
 
+# Salin SSL cert ke direktori Xray
+log_info "Menyalin sertifikat ke /etc/xray..."
+cp "$CERT_PATH" /etc/xray/cert.pem
+cp "$KEY_PATH" /etc/xray/key.pem
+log_success "✅ Sertifikat disalin ke /etc/xray/"
+
+# Buat konfigurasi Xray default (VMESS, VLESS, TROJAN TLS WS di port 443)
 cat > /etc/xray/config.json <<EOF
 {
   "log": {
@@ -180,7 +200,7 @@ cat > /etc/xray/config.json <<EOF
 }
 EOF
 
-# Aktifkan Xray Service
+# Buat systemd Xray
 cat > /etc/systemd/system/xray.service <<EOF
 [Unit]
 Description=Xray Service
@@ -196,6 +216,8 @@ EOF
 systemctl daemon-reexec
 systemctl enable xray
 systemctl restart xray
+log_success "✅ Xray aktif dan berjalan di port 443 (TLS WS)"
+
 # Install SSH & Dropbear
 log_info "Install Dropbear & UDP Custom..."
 apt install -y dropbear
