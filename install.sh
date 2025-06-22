@@ -313,6 +313,170 @@ systemctl daemon-reexec
 systemctl enable niku-bot
 systemctl start niku-bot
 
+log_info "Membuat struktur menu..."
+
+mkdir -p /root/menu/{ssh,vmess,vless,trojan}
+
+# ===== menu.sh =====
+cat > /root/menu/menu.sh <<'EOF'
+#!/bin/bash
+NC='\e[0m'; GREEN='\e[32m'; YELLOW='\e[33m'; CYAN='\e[36m'; RED='\e[31m'
+uptime_sys=$(uptime -p | cut -d " " -f2-)
+os_name=$(hostnamectl | grep "Operating System" | cut -d ':' -f2 | xargs)
+ram_total=$(free -m | awk '/Mem:/{print $2}')
+ram_used=$(free -m | awk '/Mem:/{print $3}')
+core=$(nproc)
+domain=$(cat /etc/xray/domain)
+ip_vps=$(curl -s ipv4.icanhazip.com)
+city=$(curl -s ipinfo.io/city)
+isp=$(curl -s ipinfo.io/org | cut -d " " -f2-10)
+check_status(){ systemctl is-active $1 &>/dev/null && echo -e "${GREEN}ON${NC}" || echo -e "${RED}OFF${NC}"; }
+status_ssh=$(check_status ssh); status_xray=$(check_status xray); status_nginx=$(check_status nginx)
+ssh_count=$(ls /etc/ssh | wc -l 2>/dev/null); vmess_count=$(cat /etc/xray/vmess-users.txt 2>/dev/null | wc -l)
+vless_count=$(cat /etc/xray/vless-users.txt 2>/dev/null | wc -l); trojan_count=$(cat /etc/xray/trojan-users.txt 2>/dev/null | wc -l)
+
+clear
+echo -e "${CYAN}────────────────────────────────────────────────────"
+echo -e "         .::::. ${YELLOW}NIKU TUNNEL / MERCURYVPN${CYAN} .::::."
+echo -e "────────────────────────────────────────────────────${NC}"
+echo -e " ┌────────────────────────────────────────────┐"
+echo -e " │ SYS OS : $os_name"
+echo -e " │ RAM    : ${ram_total}MB / ${ram_used}MB"
+echo -e " │ UPTIME : $uptime_sys"
+echo -e " │ CORE   : $core"
+echo -e " │ ISP    : $isp"
+echo -e " │ CITY   : $city"
+echo -e " │ IP     : $ip_vps"
+echo -e " │ DOMAIN : $domain"
+echo -e " └────────────────────────────────────────────┘"
+echo -e " ┌────────────────────────────────────────────────┐"
+echo -e " │ SSH-WS : $status_ssh │ XRAY : $status_xray │ NGINX : $status_nginx │  GOOD │"
+echo -e " └────────────────────────────────────────────────┘"
+echo -e "                 SSH OVPN : $ssh_count"
+echo -e "                 VMESS    : $vmess_count"
+echo -e "                 VLESS    : $vless_count"
+echo -e "                 TROJAN   : $trojan_count"
+echo -e " ┌────────────────────────────────────────────────┐"
+echo -e " │ 1. SSH MANAGER         5. OTHER SETTINGS        │"
+echo -e " │ 2. VMESS MANAGER       6. REBOOT VPS            │"
+echo -e " │ 3. VLESS MANAGER       x. EXIT                  │"
+echo -e " │ 4. TROJAN MANAGER                               │"
+echo -e " └────────────────────────────────────────────────┘"
+read -p "Select Menu: " opt
+case $opt in
+  1) bash /root/menu/menu-ssh.sh ;;
+  2) bash /root/menu/menu-vmess.sh ;;
+  3) bash /root/menu/menu-vless.sh ;;
+  4) bash /root/menu/menu-trojan.sh ;;
+  5) bash /root/menu/add-domain.sh ;;
+  6) reboot ;;
+  x) exit ;;
+  *) bash /root/menu/menu.sh ;;
+esac
+EOF
+chmod +x /root/menu/menu.sh
+
+# ===== menu-ssh.sh =====
+cat > /root/menu/menu-ssh.sh <<'EOF'
+#!/bin/bash
+echo -e "==== SSH MANAGER ===="
+echo -e "[1] Create SSH"
+echo -e "[2] Delete SSH"
+echo -e "[3] Trial SSH"
+echo -e "[x] Back to Menu"
+read -p "Choose: " ssh_opt
+case $ssh_opt in
+  1) bash /root/menu/ssh/create.sh ;;
+  2) echo "Delete SSH belum tersedia." ;;
+  3) echo "Trial SSH belum tersedia." ;;
+  x) bash /root/menu/menu.sh ;;
+  *) bash /root/menu/menu-ssh.sh ;;
+esac
+EOF
+chmod +x /root/menu/menu-ssh.sh
+
+# ===== menu-vmess.sh =====
+cat > /root/menu/menu-vmess.sh <<'EOF'
+#!/bin/bash
+echo -e "==== VMESS MANAGER ===="
+echo -e "[1] Create VMESS"
+echo -e "[2] Delete VMESS"
+echo -e "[3] Trial VMESS"
+echo -e "[x] Back to Menu"
+read -p "Choose: " opt
+case $opt in
+  1) bash /root/menu/vmess/create.sh ;;
+  2) echo "Delete VMESS belum tersedia." ;;
+  3) echo "Trial VMESS belum tersedia." ;;
+  x) bash /root/menu/menu.sh ;;
+  *) bash /root/menu/menu-vmess.sh ;;
+esac
+EOF
+chmod +x /root/menu/menu-vmess.sh
+
+# ===== menu-vless.sh =====
+cat > /root/menu/menu-vless.sh <<'EOF'
+#!/bin/bash
+echo -e "==== VLESS MANAGER ===="
+echo -e "[1] Create VLESS"
+echo -e "[2] Delete VLESS"
+echo -e "[3] Trial VLESS"
+echo -e "[x] Back to Menu"
+read -p "Choose: " opt
+case $opt in
+  1) bash /root/menu/vless/create.sh ;;
+  2) echo "Delete VLESS belum tersedia." ;;
+  3) echo "Trial VLESS belum tersedia." ;;
+  x) bash /root/menu/menu.sh ;;
+  *) bash /root/menu/menu-vless.sh ;;
+esac
+EOF
+chmod +x /root/menu/menu-vless.sh
+
+# ===== menu-trojan.sh =====
+cat > /root/menu/menu-trojan.sh <<'EOF'
+#!/bin/bash
+echo -e "==== TROJAN MANAGER ===="
+echo -e "[1] Create TROJAN"
+echo -e "[2] Delete TROJAN"
+echo -e "[3] Trial TROJAN"
+echo -e "[x] Back to Menu"
+read -p "Choose: " opt
+case $opt in
+  1) bash /root/menu/trojan/create.sh ;;
+  2) echo "Delete TROJAN belum tersedia." ;;
+  3) echo "Trial TROJAN belum tersedia." ;;
+  x) bash /root/menu/menu.sh ;;
+  *) bash /root/menu/menu-trojan.sh ;;
+esac
+EOF
+chmod +x /root/menu/menu-trojan.sh
+
+# ===== create.sh dummy untuk semua protocol =====
+for proto in ssh vmess vless trojan; do
+  cat > /root/menu/$proto/create.sh <<-EOL
+#!/bin/bash
+echo "Create akun $proto berhasil. (dummy)"
+EOL
+  chmod +x /root/menu/$proto/create.sh
+done
+
+# add-domain.sh
+cat > /root/menu/add-domain.sh <<'EOF'
+#!/bin/bash
+read -p "Masukkan domain baru: " new_domain
+echo "$new_domain" > /etc/xray/domain
+systemctl restart xray
+echo "Domain diubah ke $new_domain dan Xray direstart."
+EOF
+chmod +x /root/menu/add-domain.sh
+
+# auto run menu
+echo "clear && bash /root/menu/menu.sh" >> /root/.bashrc
+log_success "Menu CLI terpasang otomatis!"
+
+
+
 log_success "Instalasi semua selesai!"
 
 read -p "Reboot VPS sekarang? (y/n): " reboot_confirm
