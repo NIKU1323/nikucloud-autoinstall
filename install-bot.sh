@@ -1,14 +1,15 @@
 #!/bin/bash
-# AUTO INSTALL TELEGRAM BOT REGISTRASI IP VPS
+# AUTO INSTALL TELEGRAM BOT REGISTRASI IP VPS (Full Menu + Flexible Expired)
 # Author: NIKU TUNNEL / MERCURYVPN
 
 GREEN='\e[32m'
 YELLOW='\e[33m'
 NC='\e[0m'
 
+clear
 echo -e "${YELLOW}[INFO] Install dependensi Python...${NC}"
-apt install -y python3 python3-pip
-pip3 install python-telegram-bot --quiet
+apt install -y python3 python3-pip > /dev/null 2>&1
+pip3 install python-telegram-bot==20.3 --quiet
 
 mkdir -p /root/bot
 
@@ -24,12 +25,20 @@ EOF
 echo -e "${YELLOW}[INFO] Membuat allowed.json kosong...${NC}"
 echo "[]" > /root/bot/allowed.json
 
-echo -e "${YELLOW}[INFO] Membuat bot.py...${NC}"
+echo -e "${YELLOW}[INFO] Membuat file bot.py...${NC}"
 cat <<'EOF' > /root/bot/bot.py
 import json, logging
-from telegram import Update
-from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
-import os
+from datetime import datetime, timedelta
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import (
+    ApplicationBuilder,
+    CommandHandler,
+    ContextTypes,
+    CallbackQueryHandler,
+    MessageHandler,
+    filters,
+    ConversationHandler,
+)
 
 with open("/root/bot/config.json") as f:
     config = json.load(f)
@@ -37,6 +46,8 @@ with open("/root/bot/config.json") as f:
 TOKEN = config["token"]
 ADMIN_ID = config["admin_id"]
 FILE = config["allowed_file"]
+
+data_temp = {}
 
 def save(data):
     with open(FILE, "w") as f:
@@ -52,98 +63,155 @@ def find_ip(data, ip):
             return i
     return -1
 
-async def addip(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
         return
+    keyboard = [
+        [InlineKeyboardButton("➕ Tambah IP", callback_data="addip")],
+        [InlineKeyboardButton("📄 List IP", callback_data="listip")],
+        [InlineKeyboardButton("✏️ Edit Client", callback_data="editclient"),
+         InlineKeyboardButton("🔁 Renew Expired", callback_data="renewip")],
+        [InlineKeyboardButton("🗑️ Hapus IP", callback_data="removeip")],
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await update.message.reply_text("🤖 Silakan pilih menu:", reply_markup=reply_markup)
+
+async def handle_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    cmd = query.data
+    if cmd == "addip":
+        await query.edit_message_text("🖥️ Kirim IP VPS:")
+        return 1
+    elif cmd == "listip":
+        return await listip(query, context)
+    elif cmd == "editclient":
+        await query.edit_message_text("✏️ Kirim IP yang mau diubah client-nya:")
+        return 10
+    elif cmd == "renewip":
+        await query.edit_message_text("🔁 Kirim IP yang mau diperpanjang expired-nya:")
+        return 20
+    elif cmd == "removeip":
+        await query.edit_message_text("🗑️ Kirim IP yang mau dihapus:")
+        return 30
+
+async def get_ip(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    data_temp["ip"] = update.message.text.strip()
+    await update.message.reply_text("✍️ Kirim nama client:")
+    return 2
+
+async def get_client(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    data_temp["client"] = update.message.text.strip()
+    await update.message.reply_text("🕐 Kirim expired (format: jumlah hari atau YYYY-MM-DD):")
+    return 3
+
+async def get_expired(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    exp_input = update.message.text.strip()
     try:
-        ip, client, expired = context.args
+        if exp_input.isdigit():
+            exp = (datetime.now() + timedelta(days=int(exp_input))).strftime("%Y-%m-%d")
+        else:
+            exp = datetime.strptime(exp_input, "%Y-%m-%d").strftime("%Y-%m-%d")
     except:
-        await update.message.reply_text("Usage:\n/addip ip client expired\nExample:\n/addip 1.2.3.4 MercuryVPN 2025-07-01")
-        return
+        await update.message.reply_text("❌ Format salah. Contoh: 30 atau 2025-07-10")
+        return 3
+    ip = data_temp["ip"]
+    client = data_temp["client"]
     data = load()
     if find_ip(data, ip) != -1:
-        await update.message.reply_text("IP sudah terdaftar.")
-        return
-    data.append({"ip": ip, "client": client, "expired": expired})
+        await update.message.reply_text("❌ IP sudah terdaftar.")
+        return ConversationHandler.END
+    data.append({"ip": ip, "client": client, "expired": exp})
     save(data)
-    await update.message.reply_text(f"✅ IP {ip} berhasil ditambahkan.")
+    await update.message.reply_text(f"✅ IP {ip} ditambahkan.\nClient: {client}\nExpired: {exp}")
+    return ConversationHandler.END
 
 async def listip(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user.id != ADMIN_ID:
-        return
     data = load()
     if not data:
         await update.message.reply_text("❌ Belum ada IP terdaftar.")
-        return
+        return ConversationHandler.END
     msg = "📋 Daftar IP Terdaftar:\n"
     for i, d in enumerate(data, 1):
         msg += f"{i}. {d['ip']} | {d['client']} | Exp: {d['expired']}\n"
     await update.message.reply_text(msg)
+    return ConversationHandler.END
 
-async def renewip(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user.id != ADMIN_ID:
-        return
-    try:
-        ip, new_exp = context.args
-    except:
-        await update.message.reply_text("Usage:\n/renewip ip yyyy-mm-dd")
-        return
+async def get_ip_edit(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    data_temp["ip"] = update.message.text.strip()
+    await update.message.reply_text("🆕 Kirim nama client baru:")
+    return 11
+
+async def get_client_edit(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    new_client = update.message.text.strip()
     data = load()
-    i = find_ip(data, ip)
+    i = find_ip(data, data_temp["ip"])
     if i == -1:
         await update.message.reply_text("❌ IP tidak ditemukan.")
-        return
-    data[i]["expired"] = new_exp
+        return ConversationHandler.END
+    data[i]["client"] = new_client
     save(data)
-    await update.message.reply_text(f"✅ Expired IP {ip} diperbarui ke {new_exp}.")
+    await update.message.reply_text(f"✅ Client IP {data_temp['ip']} diubah ke {new_client}.")
+    return ConversationHandler.END
 
-async def editclient(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user.id != ADMIN_ID:
-        return
-    try:
-        ip, new_name = context.args
-    except:
-        await update.message.reply_text("Usage:\n/editclient ip nama_baru")
-        return
+async def get_ip_renew(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    data_temp["ip"] = update.message.text.strip()
+    await update.message.reply_text("⏳ Kirim jumlah hari perpanjangan atau YYYY-MM-DD:")
+    return 21
+
+async def get_exp_renew(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    ip = data_temp["ip"]
     data = load()
     i = find_ip(data, ip)
     if i == -1:
         await update.message.reply_text("❌ IP tidak ditemukan.")
-        return
-    data[i]["client"] = new_name
+        return ConversationHandler.END
+    exp_input = update.message.text.strip()
+    try:
+        if exp_input.isdigit():
+            exp = (datetime.now() + timedelta(days=int(exp_input))).strftime("%Y-%m-%d")
+        else:
+            exp = datetime.strptime(exp_input, "%Y-%m-%d").strftime("%Y-%m-%d")
+    except:
+        await update.message.reply_text("❌ Format salah. Contoh: 30 atau 2025-07-10")
+        return 21
+    data[i]["expired"] = exp
     save(data)
-    await update.message.reply_text(f"✅ Client IP {ip} diubah ke {new_name}.")
+    await update.message.reply_text(f"✅ Expired IP {ip} diperpanjang ke {exp}.")
+    return ConversationHandler.END
 
-async def removeip(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user.id != ADMIN_ID:
-        return
-    try:
-        ip = context.args[0]
-    except:
-        await update.message.reply_text("Usage:\n/removeip ip")
-        return
+async def get_ip_remove(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    ip = update.message.text.strip()
     data = load()
     i = find_ip(data, ip)
     if i == -1:
         await update.message.reply_text("❌ IP tidak ditemukan.")
-        return
+        return ConversationHandler.END
     data.pop(i)
     save(data)
     await update.message.reply_text(f"🗑️ IP {ip} berhasil dihapus.")
-
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user.id != ADMIN_ID:
-        return
-    await update.message.reply_text("🤖 Bot Siap!\nPerintah:\n/addip\n/listip\n/renewip\n/editclient\n/removeip")
+    return ConversationHandler.END
 
 def main():
     app = ApplicationBuilder().token(TOKEN).build()
+
+    conv = ConversationHandler(
+        entry_points=[CallbackQueryHandler(handle_menu)],
+        states={
+            1: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_ip)],
+            2: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_client)],
+            3: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_expired)],
+            10: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_ip_edit)],
+            11: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_client_edit)],
+            20: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_ip_renew)],
+            21: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_exp_renew)],
+            30: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_ip_remove)],
+        },
+        fallbacks=[],
+    )
+
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("addip", addip))
-    app.add_handler(CommandHandler("listip", listip))
-    app.add_handler(CommandHandler("renewip", renewip))
-    app.add_handler(CommandHandler("editclient", editclient))
-    app.add_handler(CommandHandler("removeip", removeip))
+    app.add_handler(conv)
     app.run_polling()
 
 if __name__ == "__main__":
@@ -167,8 +235,13 @@ EOF
 
 systemctl daemon-reexec
 systemctl enable bot
-systemctl start bot
+systemctl restart bot
+
+# Tambahkan PATH fix permanen
+echo -e "${YELLOW}[INFO] Menambahkan fix PATH untuk reboot...${NC}"
+echo 'export PATH=$PATH:/sbin:/usr/sbin' >> ~/.profile
 
 echo -e "${GREEN}[SELESAI] Bot Telegram berhasil diinstal dan aktif.${NC}"
-echo -e "Silakan edit file: /root/bot/config.json"
-echo -e "Ganti token dan admin_id sesuai Bot Telegram kamu"
+echo -e "🔧 Silakan edit config:"
+echo -e "  nano /root/bot/config.json"
+echo -e "  > Ganti token & admin_id sesuai dengan bot kamu"
