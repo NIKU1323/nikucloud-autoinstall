@@ -1,7 +1,16 @@
-#!/usr/bin/env python3
-# bot.py - Telegram Bot Registrasi IP VPS
+#!/bin/bash
+# AUTO INSTALL TELEGRAM BOT REGISTRASI IP VPS
 # Author: MERCURYVPN / NIKU TUNNEL
 
+BOT_DIR="/root/bot"
+CONFIG_FILE="$BOT_DIR/config.json"
+ALLOWED_FILE="$BOT_DIR/allowed.json"
+
+mkdir -p $BOT_DIR
+
+# === BOT.PY ===
+cat > $BOT_DIR/bot.py <<'EOF'
+#!/usr/bin/env python3
 import json, logging, os
 from datetime import datetime, timedelta
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
@@ -17,12 +26,8 @@ from telegram.ext import (
     PicklePersistence,
 )
 
-# Logging debug
-logging.basicConfig(
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO
-)
+logging.basicConfig(format="%(asctime)s - %(levelname)s - %(message)s", level=logging.INFO)
 
-# Load config
 with open("/root/bot/config.json") as f:
     config = json.load(f)
 
@@ -32,7 +37,6 @@ FILE = config["allowed_file"]
 
 data_temp = {}
 
-# Fungsi bantu
 def save(data):
     with open(FILE, "w") as f:
         json.dump(data, f, indent=2)
@@ -49,7 +53,6 @@ def find_ip(data, ip):
             return i
     return -1
 
-# Start command
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
         await update.message.reply_text("❌ Anda tidak diizinkan mengakses bot ini.")
@@ -64,7 +67,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     reply_markup = InlineKeyboardMarkup(keyboard)
     await update.message.reply_text("🤖 Silakan pilih menu:", reply_markup=reply_markup)
 
-# Menu handler
 async def handle_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -85,7 +87,6 @@ async def handle_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text("🗑️ Kirim IP yang mau dihapus:")
         return 30
 
-# Tambah IP
 async def get_ip(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logging.info(f"📥 get_ip: {update.message.text}")
     data_temp["ip"] = update.message.text.strip()
@@ -100,7 +101,6 @@ async def get_client(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def get_expired(update: Update, context: ContextTypes.DEFAULT_TYPE):
     exp_input = update.message.text.strip()
-    logging.info(f"📥 get_expired: {exp_input}")
     try:
         if exp_input.isdigit():
             exp = (datetime.now() + timedelta(days=int(exp_input))).strftime("%Y-%m-%d")
@@ -120,7 +120,6 @@ async def get_expired(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(f"✅ IP {ip} ditambahkan.\nClient: {client}\nExpired: {exp}")
     return ConversationHandler.END
 
-# Tampilkan IP
 async def listip_query(query, context):
     data = load()
     if not data:
@@ -132,7 +131,6 @@ async def listip_query(query, context):
     await query.edit_message_text(msg)
     return ConversationHandler.END
 
-# Edit Client
 async def get_ip_edit(update: Update, context: ContextTypes.DEFAULT_TYPE):
     data_temp["ip"] = update.message.text.strip()
     await update.message.reply_text("🆕 Kirim nama client baru:")
@@ -150,7 +148,6 @@ async def get_client_edit(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(f"✅ Client IP {data_temp['ip']} diubah ke {new_client}.")
     return ConversationHandler.END
 
-# Renew Expired
 async def get_ip_renew(update: Update, context: ContextTypes.DEFAULT_TYPE):
     data_temp["ip"] = update.message.text.strip()
     await update.message.reply_text("⏳ Kirim jumlah hari perpanjangan atau YYYY-MM-DD:")
@@ -177,7 +174,6 @@ async def get_exp_renew(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(f"✅ Expired IP {ip} diperpanjang ke {exp}.")
     return ConversationHandler.END
 
-# Hapus IP
 async def get_ip_remove(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ip = update.message.text.strip()
     data = load()
@@ -190,7 +186,6 @@ async def get_ip_remove(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(f"🗑️ IP {ip} berhasil dihapus.")
     return ConversationHandler.END
 
-# Main
 def main():
     persistence = PicklePersistence(filepath="/root/bot/bot_data")
     defaults = Defaults(parse_mode="HTML")
@@ -223,4 +218,41 @@ def main():
 
 if __name__ == "__main__":
     main()
-    
+EOF
+
+# === CONFIG.JSON ===
+cat > $CONFIG_FILE <<EOF
+{
+  "token": "ISI_TOKEN_BOT_ANDA",
+  "admin_id": 123456789,
+  "allowed_file": "$ALLOWED_FILE"
+}
+EOF
+
+# === ALLOWED.JSON ===
+cat > $ALLOWED_FILE <<EOF
+[]
+EOF
+
+# === SYSTEMD SERVICE ===
+cat > /etc/systemd/system/bot.service <<EOF
+[Unit]
+Description=Bot Telegram Registrasi IP
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 /root/bot/bot.py
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+# Set izin & jalankan
+chmod +x $BOT_DIR/bot.py
+systemctl daemon-reload
+systemctl enable bot
+systemctl restart bot
+
+echo "✅ Bot Telegram berhasil diinstall & dijalankan!"
