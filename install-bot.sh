@@ -6,6 +6,14 @@ BOT_DIR="/root/bot"
 CONFIG_FILE="$BOT_DIR/config.json"
 ALLOWED_FILE="$BOT_DIR/allowed.json"
 
+# === Cek variabel env ===
+if [[ -z "$TOKEN_BOT" || -z "$ADMIN_ID_BOT" ]]; then
+  echo "❌ ERROR: TOKEN_BOT dan ADMIN_ID_BOT belum di-set."
+  echo "Gunakan format:"
+  echo "TOKEN_BOT=\"xxxx\" ADMIN_ID_BOT=123456789 bash <(curl -sL https://...)"
+  exit 1
+fi
+
 mkdir -p $BOT_DIR
 
 # === BOT.PY ===
@@ -22,8 +30,6 @@ from telegram.ext import (
     MessageHandler,
     filters,
     ConversationHandler,
-    Defaults,
-    PicklePersistence,
 )
 
 logging.basicConfig(format="%(asctime)s - %(levelname)s - %(message)s", level=logging.INFO)
@@ -59,7 +65,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     keyboard = [
         [InlineKeyboardButton("➕ Tambah IP", callback_data="addip")],
-        [InlineKeyboardButton("📄 List IP", callback_data="listip")],
+        [InlineButton("📄 List IP", callback_data="listip")],
         [InlineKeyboardButton("✏️ Edit Client", callback_data="editclient"),
          InlineKeyboardButton("🔁 Renew Expired", callback_data="renewip")],
         [InlineKeyboardButton("🗑️ Hapus IP", callback_data="removeip")],
@@ -71,7 +77,6 @@ async def handle_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     cmd = query.data
-    logging.info(f"📥 Menu dipilih: {cmd}")
     if cmd == "addip":
         await query.edit_message_text("🖥️ Kirim IP VPS:")
         return 1
@@ -88,13 +93,11 @@ async def handle_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return 30
 
 async def get_ip(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    logging.info(f"📥 get_ip: {update.message.text}")
     data_temp["ip"] = update.message.text.strip()
     await update.message.reply_text("✍️ Kirim nama client:")
     return 2
 
 async def get_client(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    logging.info(f"📥 get_client: {update.message.text}")
     data_temp["client"] = update.message.text.strip()
     await update.message.reply_text("🕐 Kirim expired (format: jumlah hari atau YYYY-MM-DD):")
     return 3
@@ -187,11 +190,7 @@ async def get_ip_remove(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return ConversationHandler.END
 
 def main():
-    persistence = PicklePersistence(filepath="/root/bot/bot_data")
-    defaults = Defaults(parse_mode="HTML")
-
-    app = ApplicationBuilder().token(TOKEN).persistence(persistence).defaults(defaults).build()
-
+    app = ApplicationBuilder().token(TOKEN).build()
     conv = ConversationHandler(
         entry_points=[CallbackQueryHandler(handle_menu)],
         states={
@@ -206,14 +205,9 @@ def main():
         },
         fallbacks=[],
         per_message=True,
-        name="conv",
-        persistent=True,
     )
-
     app.add_handler(CommandHandler("start", start))
     app.add_handler(conv)
-
-    print("✅ Bot polling dimulai...")
     app.run_polling()
 
 if __name__ == "__main__":
@@ -223,8 +217,8 @@ EOF
 # === CONFIG.JSON ===
 cat > $CONFIG_FILE <<EOF
 {
-  "token": "ISI_TOKEN_BOT_ANDA",
-  "admin_id": 123456789,
+  "token": "$TOKEN_BOT",
+  "admin_id": $ADMIN_ID_BOT,
   "allowed_file": "$ALLOWED_FILE"
 }
 EOF
@@ -242,15 +236,16 @@ After=network.target
 
 [Service]
 Type=simple
-ExecStart=/usr/bin/python3 /root/bot/bot.py
+ExecStart=/usr/bin/python3 $BOT_DIR/bot.py
 Restart=always
 
 [Install]
 WantedBy=multi-user.target
 EOF
 
-# Set izin & jalankan
+# Set izin dan aktifkan
 chmod +x $BOT_DIR/bot.py
+systemctl daemon-reexec
 systemctl daemon-reload
 systemctl enable bot
 systemctl restart bot
