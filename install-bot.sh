@@ -1,32 +1,7 @@
-#!/bin/bash
-# AUTO INSTALL TELEGRAM BOT REGISTRASI IP VPS (Full Menu + Flexible Expired)
-# Author: NIKU TUNNEL / MERCURYVPN
+#!/usr/bin/env python3
+# bot.py - Telegram Bot Registrasi IP VPS
+# Author: MERCURYVPN / NIKU TUNNEL
 
-GREEN='\e[32m'
-YELLOW='\e[33m'
-NC='\e[0m'
-
-clear
-echo -e "${YELLOW}[INFO] Install dependensi Python...${NC}"
-apt install -y python3 python3-pip > /dev/null 2>&1
-pip3 install python-telegram-bot==20.3 --quiet
-
-mkdir -p /root/bot
-
-echo -e "${YELLOW}[INFO] Membuat file config.json...${NC}"
-cat <<EOF > /root/bot/config.json
-{
-  "token": "ISI_TOKEN_BOT_KAMU",
-  "admin_id": 123456789,
-  "allowed_file": "/root/bot/allowed.json"
-}
-EOF
-
-echo -e "${YELLOW}[INFO] Membuat allowed.json kosong...${NC}"
-echo "[]" > /root/bot/allowed.json
-
-echo -e "${YELLOW}[INFO] Membuat file bot.py...${NC}"
-cat <<'EOF' > /root/bot/bot.py
 import json, logging
 from datetime import datetime, timedelta
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
@@ -40,6 +15,10 @@ from telegram.ext import (
     ConversationHandler,
 )
 
+# Logging untuk melihat error
+logging.basicConfig(level=logging.INFO)
+
+# Load config
 with open("/root/bot/config.json") as f:
     config = json.load(f)
 
@@ -49,6 +28,7 @@ FILE = config["allowed_file"]
 
 data_temp = {}
 
+# Fungsi bantu
 def save(data):
     with open(FILE, "w") as f:
         json.dump(data, f, indent=2)
@@ -63,6 +43,7 @@ def find_ip(data, ip):
             return i
     return -1
 
+# Start command
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
         return
@@ -76,6 +57,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     reply_markup = InlineKeyboardMarkup(keyboard)
     await update.message.reply_text("🤖 Silakan pilih menu:", reply_markup=reply_markup)
 
+# Menu handler
 async def handle_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -84,7 +66,7 @@ async def handle_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text("🖥️ Kirim IP VPS:")
         return 1
     elif cmd == "listip":
-        return await listip(query, context)
+        return await listip_query(query, context)
     elif cmd == "editclient":
         await query.edit_message_text("✏️ Kirim IP yang mau diubah client-nya:")
         return 10
@@ -95,6 +77,7 @@ async def handle_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text("🗑️ Kirim IP yang mau dihapus:")
         return 30
 
+# Tambah IP
 async def get_ip(update: Update, context: ContextTypes.DEFAULT_TYPE):
     data_temp["ip"] = update.message.text.strip()
     await update.message.reply_text("✍️ Kirim nama client:")
@@ -126,17 +109,19 @@ async def get_expired(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(f"✅ IP {ip} ditambahkan.\nClient: {client}\nExpired: {exp}")
     return ConversationHandler.END
 
-async def listip(update: Update, context: ContextTypes.DEFAULT_TYPE):
+# Tampilkan IP (khusus callback query)
+async def listip_query(query, context):
     data = load()
     if not data:
-        await update.message.reply_text("❌ Belum ada IP terdaftar.")
+        await query.edit_message_text("❌ Belum ada IP terdaftar.")
         return ConversationHandler.END
     msg = "📋 Daftar IP Terdaftar:\n"
     for i, d in enumerate(data, 1):
         msg += f"{i}. {d['ip']} | {d['client']} | Exp: {d['expired']}\n"
-    await update.message.reply_text(msg)
+    await query.edit_message_text(msg)
     return ConversationHandler.END
 
+# Edit Client
 async def get_ip_edit(update: Update, context: ContextTypes.DEFAULT_TYPE):
     data_temp["ip"] = update.message.text.strip()
     await update.message.reply_text("🆕 Kirim nama client baru:")
@@ -154,6 +139,7 @@ async def get_client_edit(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(f"✅ Client IP {data_temp['ip']} diubah ke {new_client}.")
     return ConversationHandler.END
 
+# Renew Expired
 async def get_ip_renew(update: Update, context: ContextTypes.DEFAULT_TYPE):
     data_temp["ip"] = update.message.text.strip()
     await update.message.reply_text("⏳ Kirim jumlah hari perpanjangan atau YYYY-MM-DD:")
@@ -180,6 +166,7 @@ async def get_exp_renew(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(f"✅ Expired IP {ip} diperpanjang ke {exp}.")
     return ConversationHandler.END
 
+# Hapus IP
 async def get_ip_remove(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ip = update.message.text.strip()
     data = load()
@@ -192,6 +179,7 @@ async def get_ip_remove(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(f"🗑️ IP {ip} berhasil dihapus.")
     return ConversationHandler.END
 
+# Main bot
 def main():
     app = ApplicationBuilder().token(TOKEN).build()
 
@@ -208,40 +196,15 @@ def main():
             30: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_ip_remove)],
         },
         fallbacks=[],
+        per_message=True,
     )
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(conv)
+
+    print("✅ Bot polling dimulai...")
     app.run_polling()
 
 if __name__ == "__main__":
     main()
-EOF
-
-echo -e "${YELLOW}[INFO] Membuat service bot.service...${NC}"
-cat <<EOF > /etc/systemd/system/bot.service
-[Unit]
-Description=Bot Telegram Registrasi IP
-After=network.target
-
-[Service]
-WorkingDirectory=/root/bot
-ExecStart=/usr/bin/python3 /root/bot/bot.py
-Restart=always
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
-systemctl daemon-reexec
-systemctl enable bot
-systemctl restart bot
-
-# Tambahkan PATH fix permanen
-echo -e "${YELLOW}[INFO] Menambahkan fix PATH untuk reboot...${NC}"
-echo 'export PATH=$PATH:/sbin:/usr/sbin' >> ~/.profile
-
-echo -e "${GREEN}[SELESAI] Bot Telegram berhasil diinstal dan aktif.${NC}"
-echo -e "🔧 Silakan edit config:"
-echo -e "  nano /root/bot/config.json"
-echo -e "  > Ganti token & admin_id sesuai dengan bot kamu"
+    
