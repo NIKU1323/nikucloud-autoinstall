@@ -1,223 +1,174 @@
 #!/bin/bash
+# AUTO INSTALL TELEGRAM BOT REGISTRASI IP VPS
+# Author: NIKU TUNNEL / MERCURYVPN
 
-BOT_DIR="/root/bot"
-ALLOWED_JSON="/var/www/html/allowed.json"
-SERVICE_FILE="/etc/systemd/system/bot.service"
+GREEN='\e[32m'
+YELLOW='\e[33m'
+NC='\e[0m'
 
-echo "Starting install Telegram bot registrasi IP..."
-
-apt update -y
+echo -e "${YELLOW}[INFO] Install dependensi Python...${NC}"
 apt install -y python3 python3-pip
+pip3 install python-telegram-bot --quiet
 
-mkdir -p $BOT_DIR
+mkdir -p /root/bot
 
-pip3 install python-telegram-bot==20.8
+echo -e "${YELLOW}[INFO] Membuat file config.json...${NC}"
+cat <<EOF > /root/bot/config.json
+{
+  "token": "ISI_TOKEN_BOT_KAMU",
+  "admin_id": 123456789,
+  "allowed_file": "/root/bot/allowed.json"
+}
+EOF
 
-cat > $BOT_DIR/bot.py <<'EOF'
-#!/usr/bin/python3
-import json, os, logging
-from datetime import datetime, timedelta
-from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
-from telegram.ext import (
-    ApplicationBuilder, CommandHandler, MessageHandler, filters,
-    CallbackQueryHandler, ConversationHandler, ContextTypes
-)
+echo -e "${YELLOW}[INFO] Membuat allowed.json kosong...${NC}"
+echo "[]" > /root/bot/allowed.json
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-CONFIG_PATH = os.path.join(BASE_DIR, "config.json")
-ALLOWED_JSON = "/var/www/html/allowed.json"
+echo -e "${YELLOW}[INFO] Membuat bot.py...${NC}"
+cat <<'EOF' > /root/bot/bot.py
+import json, logging
+from telegram import Update
+from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
+import os
 
-logging.basicConfig(level=logging.INFO)
+with open("/root/bot/config.json") as f:
+    config = json.load(f)
 
-with open(CONFIG_PATH) as config_file:
-    config = json.load(config_file)
+TOKEN = config["token"]
+ADMIN_ID = config["admin_id"]
+FILE = config["allowed_file"]
 
-TOKEN = config.get("token", "")
-ADMIN_ID = config.get("admin_id", 0)
+def save(data):
+    with open(FILE, "w") as f:
+        json.dump(data, f, indent=2)
 
-REGISTER_IP, REGISTER_CLIENT, REGISTER_LIMIT, RENEW_LIMIT = range(4)
+def load():
+    with open(FILE) as f:
+        return json.load(f)
+
+def find_ip(data, ip):
+    for i, entry in enumerate(data):
+        if entry["ip"] == ip:
+            return i
+    return -1
+
+async def addip(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != ADMIN_ID:
+        return
+    try:
+        ip, client, expired = context.args
+    except:
+        await update.message.reply_text("Usage:\n/addip ip client expired\nExample:\n/addip 1.2.3.4 MercuryVPN 2025-07-01")
+        return
+    data = load()
+    if find_ip(data, ip) != -1:
+        await update.message.reply_text("IP sudah terdaftar.")
+        return
+    data.append({"ip": ip, "client": client, "expired": expired})
+    save(data)
+    await update.message.reply_text(f"✅ IP {ip} berhasil ditambahkan.")
+
+async def listip(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != ADMIN_ID:
+        return
+    data = load()
+    if not data:
+        await update.message.reply_text("❌ Belum ada IP terdaftar.")
+        return
+    msg = "📋 Daftar IP Terdaftar:\n"
+    for i, d in enumerate(data, 1):
+        msg += f"{i}. {d['ip']} | {d['client']} | Exp: {d['expired']}\n"
+    await update.message.reply_text(msg)
+
+async def renewip(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != ADMIN_ID:
+        return
+    try:
+        ip, new_exp = context.args
+    except:
+        await update.message.reply_text("Usage:\n/renewip ip yyyy-mm-dd")
+        return
+    data = load()
+    i = find_ip(data, ip)
+    if i == -1:
+        await update.message.reply_text("❌ IP tidak ditemukan.")
+        return
+    data[i]["expired"] = new_exp
+    save(data)
+    await update.message.reply_text(f"✅ Expired IP {ip} diperbarui ke {new_exp}.")
+
+async def editclient(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != ADMIN_ID:
+        return
+    try:
+        ip, new_name = context.args
+    except:
+        await update.message.reply_text("Usage:\n/editclient ip nama_baru")
+        return
+    data = load()
+    i = find_ip(data, ip)
+    if i == -1:
+        await update.message.reply_text("❌ IP tidak ditemukan.")
+        return
+    data[i]["client"] = new_name
+    save(data)
+    await update.message.reply_text(f"✅ Client IP {ip} diubah ke {new_name}.")
+
+async def removeip(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != ADMIN_ID:
+        return
+    try:
+        ip = context.args[0]
+    except:
+        await update.message.reply_text("Usage:\n/removeip ip")
+        return
+    data = load()
+    i = find_ip(data, ip)
+    if i == -1:
+        await update.message.reply_text("❌ IP tidak ditemukan.")
+        return
+    data.pop(i)
+    save(data)
+    await update.message.reply_text(f"🗑️ IP {ip} berhasil dihapus.")
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
         return
-    keyboard = [
-        [InlineKeyboardButton("📝 REGISTRASI IP", callback_data="register")],
-        [InlineKeyboardButton("📃 LIST IP", callback_data="list")],
-        [InlineKeyboardButton("🗑️ REMOVE IP", callback_data="remove")],
-        [InlineKeyboardButton("🔁 RENEW IP", callback_data="renew")],
-    ]
-    await update.message.reply_text("📡 *MENU REGISTRASI IP VPS*", parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard))
-
-async def menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    if update.effective_user.id != ADMIN_ID:
-        return
-    if query.data == "register":
-        context.user_data["mode"] = "register"
-        await query.message.reply_text("📥 Masukkan IP VPS:")
-        return REGISTER_IP
-    elif query.data == "list":
-        if os.path.exists(ALLOWED_JSON):
-            with open(ALLOWED_JSON, "r") as f:
-                data = json.load(f)
-            if not data:
-                await query.message.reply_text("📂 Belum ada IP yang teregistrasi.")
-                return ConversationHandler.END
-            msg = "📄 IP Teregistrasi:\n\n"
-            for entry in data:
-                msg += f"• `{entry['ip']}` | 📌 {entry['client']} | ⏳ {entry['expired']}\n"
-            await query.message.reply_text(msg, parse_mode="Markdown")
-        else:
-            await query.message.reply_text("❌ File allowed.json tidak ditemukan.")
-        return ConversationHandler.END
-    elif query.data == "remove":
-        context.user_data["mode"] = "remove"
-        await query.message.reply_text("🗑️ Masukkan IP yang ingin dihapus:")
-        return REGISTER_IP
-    elif query.data == "renew":
-        context.user_data["mode"] = "renew"
-        await query.message.reply_text("♻️ Masukkan IP yang ingin diperpanjang:")
-        return REGISTER_IP
-
-async def handle_ip_based_on_mode(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    mode = context.user_data.get("mode")
-    if mode == "remove" or mode == "renew":
-        return await handle_remove_or_renew(update, context)
-    else:
-        return await handle_register_ip(update, context)
-
-async def handle_register_ip(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    context.user_data["ip"] = update.message.text.strip()
-    await update.message.reply_text("✏️ Masukkan nama client:")
-    return REGISTER_CLIENT
-
-async def handle_register_client(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    context.user_data["client"] = update.message.text.strip()
-    await update.message.reply_text("⏳ Masukkan masa aktif (hari):")
-    return REGISTER_LIMIT
-
-async def handle_register_limit(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    ip = context.user_data["ip"]
-    client = context.user_data["client"]
-    try:
-        days = int(update.message.text.strip())
-        expired = (datetime.now() + timedelta(days=days)).strftime("%Y-%m-%d")
-        data = []
-        if os.path.exists(ALLOWED_JSON):
-            with open(ALLOWED_JSON, "r") as f:
-                data = json.load(f)
-        updated = False
-        for entry in data:
-            if entry["ip"] == ip:
-                entry["client"] = client
-                entry["expired"] = expired
-                updated = True
-                break
-        if not updated:
-            data.append({"ip": ip, "client": client, "expired": expired})
-        with open(ALLOWED_JSON, "w") as f:
-            json.dump(data, f, indent=2)
-        await update.message.reply_text(f"✅ IP `{ip}` didaftarkan\n📌 {client} ⏳ {expired}", parse_mode="Markdown")
-    except Exception as e:
-        await update.message.reply_text(f"❌ Error: {e}")
-    return ConversationHandler.END
-
-async def handle_remove_or_renew(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    ip = update.message.text.strip()
-    if not os.path.exists(ALLOWED_JSON):
-        await update.message.reply_text("❌ File not found.")
-        return ConversationHandler.END
-
-    with open(ALLOWED_JSON, "r") as f:
-        data = json.load(f)
-
-    found = False
-    for entry in data:
-        if entry["ip"] == ip:
-            found = True
-            if context.user_data["mode"] == "remove":
-                data.remove(entry)
-                with open(ALLOWED_JSON, "w") as f:
-                    json.dump(data, f, indent=2)
-                await update.message.reply_text(f"🗑️ IP `{ip}` berhasil dihapus.", parse_mode="Markdown")
-                return ConversationHandler.END
-            elif context.user_data["mode"] == "renew":
-                context.user_data["renew_ip"] = ip
-                await update.message.reply_text("⏳ Masukkan tambahan hari:")
-                return RENEW_LIMIT
-            break
-
-    if not found:
-        await update.message.reply_text("❌ IP tidak ditemukan.")
-    return ConversationHandler.END
-
-async def handle_renew_limit(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    try:
-        days = int(update.message.text.strip())
-        ip = context.user_data["renew_ip"]
-        with open(ALLOWED_JSON, "r") as f:
-            data = json.load(f)
-        for entry in data:
-            if entry["ip"] == ip:
-                entry["expired"] = (datetime.now() + timedelta(days=days)).strftime("%Y-%m-%d")
-        with open(ALLOWED_JSON, "w") as f:
-            json.dump(data, f, indent=2)
-        await update.message.reply_text(f"♻️ IP `{ip}` diperpanjang.", parse_mode="Markdown")
-    except Exception as e:
-        await update.message.reply_text(f"❌ Gagal: {e}")
-    return ConversationHandler.END
+    await update.message.reply_text("🤖 Bot Siap!\nPerintah:\n/addip\n/listip\n/renewip\n/editclient\n/removeip")
 
 def main():
     app = ApplicationBuilder().token(TOKEN).build()
-    conv_handler = ConversationHandler(
-        entry_points=[CallbackQueryHandler(menu_callback)],
-        states={
-            REGISTER_IP: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_ip_based_on_mode)],
-            REGISTER_CLIENT: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_register_client)],
-            REGISTER_LIMIT: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_register_limit)],
-            RENEW_LIMIT: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_renew_limit)],
-        },
-        fallbacks=[],
-    )
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(conv_handler)
+    app.add_handler(CommandHandler("addip", addip))
+    app.add_handler(CommandHandler("listip", listip))
+    app.add_handler(CommandHandler("renewip", renewip))
+    app.add_handler(CommandHandler("editclient", editclient))
+    app.add_handler(CommandHandler("removeip", removeip))
     app.run_polling()
 
 if __name__ == "__main__":
     main()
 EOF
 
-cat > $BOT_DIR/config.json <<EOF
-{
-  "token": "ISI_TOKEN_BOT",
-  "admin_id": 123456789
-}
-EOF
-
-mkdir -p /var/www/html
-touch $ALLOWED_JSON
-echo "[]" > $ALLOWED_JSON
-chmod 666 $ALLOWED_JSON
-
-cat > $SERVICE_FILE <<EOF
+echo -e "${YELLOW}[INFO] Membuat service bot.service...${NC}"
+cat <<EOF > /etc/systemd/system/bot.service
 [Unit]
-Description=Telegram Bot Registrasi IP
+Description=Bot Telegram Registrasi IP
 After=network.target
 
 [Service]
-ExecStart=/usr/bin/python3 $BOT_DIR/bot.py
-WorkingDirectory=$BOT_DIR
+WorkingDirectory=/root/bot
+ExecStart=/usr/bin/python3 /root/bot/bot.py
 Restart=always
-RestartSec=5
 
 [Install]
 WantedBy=multi-user.target
 EOF
 
-systemctl daemon-reload
-systemctl enable bot.service
-systemctl restart bot.service
+systemctl daemon-reexec
+systemctl enable bot
+systemctl start bot
 
-echo "Install selesai! Jangan lupa edit $BOT_DIR/config.json untuk token dan admin_id."
-echo "Service bot sudah berjalan."
+echo -e "${GREEN}[SELESAI] Bot Telegram berhasil diinstal dan aktif.${NC}"
+echo -e "Silakan edit file: /root/bot/config.json"
+echo -e "Ganti token dan admin_id sesuai Bot Telegram kamu"
