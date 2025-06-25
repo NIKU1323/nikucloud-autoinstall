@@ -1,48 +1,34 @@
-# NIKU BOT FINAL v1.1 - FIXED VERSION
+# NIKU BOT FINAL v1.2 - ADMIN PANEL FULL FITUR
 import logging, json, os, time, paramiko
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import (
-    ApplicationBuilder, CommandHandler, MessageHandler, CallbackQueryHandler,
-    filters, ContextTypes, ConversationHandler
-)
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardRemove
+from telegram.ext import (ApplicationBuilder, CommandHandler, MessageHandler, CallbackQueryHandler,
+                          filters, ContextTypes, ConversationHandler)
 
-# Logging
+# ===== Logging =====
 logging.basicConfig(level=logging.INFO)
 
-# Path
+# ===== Global State =====
+(JENIS, USERNAME, AKTIF, ADMIN_PANEL, ADMIN_TAMBAH_SALDO, ADMIN_KURANGI_SALDO,
+ ADMIN_ATUR_TARIF, KONFIRM_TOPUP, ADMIN_MENU, ADMIN_LIHAT_USER, ADMIN_HAPUS_USER,
+ ADMIN_UPLOAD_QRIS, ADMIN_TAMBAH_SERVER, ADMIN_HAPUS_SERVER) = range(14)
+USER_DATA = {}
+
+# ===== Config Paths =====
 CONFIG_PATH = "/etc/niku-bot/config.json"
 SERVER_PATH = "/etc/niku-bot/server_config.json"
 USER_DB = "/etc/niku-bot/users.json"
 QRIS_FOLDER = "/var/www/html/qris"
 
-# ===== Load Config =====
-try:
-    with open(CONFIG_PATH) as f:
-        config = json.load(f)
-        BOT_TOKEN = config["bot_token"]
-        ADMIN_IDS = config["admin_ids"]
-        TARIF = config["tarif"]
-except Exception as e:
-    print(f"❌ Gagal load config.json: {e}")
-    exit(1)
+with open(CONFIG_PATH, "r") as f:
+    BOT_CONFIG = json.load(f)
 
-# Conversation state
-(JENIS, USERNAME, AKTIF, ADMIN_PANEL, ADMIN_MENU) = range(5)
+ADMIN_IDS = BOT_CONFIG.get("ADMIN_IDS", [])
+BOT_TOKEN = BOT_CONFIG.get("BOT_TOKEN", "")
 
-# Utility
-def load_users():
-    if os.path.exists(USER_DB):
-        with open(USER_DB) as f:
-            return json.load(f)
-    return {}
-
-def save_users(data):
-    with open(USER_DB, "w") as f:
-        json.dump(data, f, indent=2)
-
+# ===== Utility =====
 def load_servers():
     if os.path.exists(SERVER_PATH):
-        with open(SERVER_PATH) as f:
+        with open(SERVER_PATH, "r") as f:
             return json.load(f)
     return []
 
@@ -50,26 +36,37 @@ def save_servers(data):
     with open(SERVER_PATH, "w") as f:
         json.dump(data, f, indent=2)
 
-def remote_exec(ip, user, passwd, perintah):
+def load_users():
+    if os.path.exists(USER_DB):
+        with open(USER_DB, "r") as f:
+            return json.load(f)
+    return {}
+
+def save_users(data):
+    with open(USER_DB, "w") as f:
+        json.dump(data, f, indent=2)
+
+def remote_exec(ip, user, password, perintah):
     ssh = paramiko.SSHClient()
     ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-    ssh.connect(ip, username=user, password=passwd, timeout=10)
+    ssh.connect(ip, username=user, password=password, timeout=10)
     stdin, stdout, stderr = ssh.exec_command(perintah)
-    out = stdout.read().decode()
+    output = stdout.read().decode()
     ssh.close()
-    return out
+    return output
 
 def cek_saldo(uid, tarif):
     db = load_users()
-    return db.get(str(uid), {}).get("saldo", 0) >= tarif
+    saldo = db.get(str(uid), {}).get("saldo", 0)
+    return saldo >= tarif
 
 def kurangi_saldo(uid, jumlah):
     db = load_users()
     if str(uid) in db:
-        db[str(uid)]["saldo"] -= jumlah
+        db[str(uid)]["saldo"] = db[str(uid)].get("saldo", 0) - jumlah
         save_users(db)
 
-# ===== START COMMAND =====
+# ===== START MENU =====
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
     keyboard = [
@@ -81,20 +78,16 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ]
     if uid in ADMIN_IDS:
         keyboard.append([InlineKeyboardButton("👑 Admin Panel", callback_data="admin_menu")])
+    await update.message.reply_text("Selamat datang di NIKU TUNNEL Bot", reply_markup=InlineKeyboardMarkup(keyboard))
 
-    if update.message:
-        await update.message.reply_text("Selamat datang di NIKU TUNNEL Bot", reply_markup=InlineKeyboardMarkup(keyboard))
-    else:
-        await update.callback_query.message.reply_text("Selamat datang di NIKU TUNNEL Bot", reply_markup=InlineKeyboardMarkup(keyboard))
-
-# ===== CALLBACK BUTTON =====
+# ===== BUTTON HANDLER =====
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-    uid = query.from_user.id
     data = query.data
 
     if data == "cek_saldo":
+        uid = query.from_user.id
         db = load_users()
         saldo = db.get(str(uid), {}).get("saldo", 0)
         await query.edit_message_text(f"💰 Saldo kamu: Rp {saldo}")
@@ -127,7 +120,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.message.reply_text("Masukkan IP VPS yang akan kamu gunakan:")
         return ADMIN_PANEL
 
-    elif data == "admin_menu" and uid in ADMIN_IDS:
+    elif data == "admin_menu" and query.from_user.id in ADMIN_IDS:
         keyboard = [
             [InlineKeyboardButton("➕ Tambah Saldo", callback_data="tambah_saldo"),
              InlineKeyboardButton("➖ Kurangi Saldo", callback_data="kurangi_saldo")],
@@ -141,19 +134,20 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text("👑 Admin Panel Lengkap", reply_markup=InlineKeyboardMarkup(keyboard))
         return ADMIN_MENU
 
-# ===== CONVERSATION =====
+# ===== INPUT USERNAME =====
 async def input_username(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["username"] = update.message.text.strip()
     await update.message.reply_text("Masukkan masa aktif akun (dalam hari):")
     return AKTIF
 
+# ===== INPUT AKTIF =====
 async def input_aktif(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
     user = context.user_data.get("username")
     jenis = context.user_data.get("jenis")
     hari = update.message.text.strip()
 
-    tarif = TARIF.get(jenis, 2000)
+    tarif = BOT_CONFIG.get("TARIF", {}).get(jenis, 2000)
     if not cek_saldo(uid, tarif):
         await update.message.reply_text("❌ Saldo tidak cukup.")
         return ConversationHandler.END
@@ -172,10 +166,11 @@ async def input_aktif(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"❌ Gagal membuat akun:\n{e}")
     return ConversationHandler.END
 
+# ===== DAFTAR IP VPS =====
 async def input_ip_vps(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
     ip = update.message.text.strip()
-    tarif = TARIF.get("ipreg", 5000)
+    tarif = BOT_CONFIG.get("tarif_ip", 1000)
 
     if not cek_saldo(uid, tarif):
         await update.message.reply_text("❌ Saldo tidak cukup.")
@@ -200,14 +195,14 @@ def main():
             ADMIN_PANEL: [MessageHandler(filters.TEXT & ~filters.COMMAND, input_ip_vps)],
             ADMIN_MENU: [MessageHandler(filters.TEXT & ~filters.COMMAND, lambda u, c: u.message.reply_text("🔧 Fitur admin sedang dikembangkan."))]
         },
-        fallbacks=[]
+        fallbacks=[],
+        allow_reentry=True
     )
 
     app.add_handler(conv)
     app.add_handler(CallbackQueryHandler(button_handler))
-    app.add_handler(CommandHandler("start", start))
     app.run_polling()
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()
-  
+    
