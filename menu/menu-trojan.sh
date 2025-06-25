@@ -1,55 +1,33 @@
 #!/bin/bash
-# TROJAN MENU - NIKU TUNNEL / MERCURYVPN
-# Lokasi file: /root/menu/menu-trojan.sh
+# MENU TROJAN - NIKU TUNNEL / MERCURYVPN
 
+NC='\e[0m'
 RED='\e[31m'
 GREEN='\e[32m'
-YELLOW='\e[33m'
 CYAN='\e[36m'
-NC='\e[0m'
 
 clear
-echo -e "${GREEN}┌──────────────────────────────────────────┐${NC}"
-echo -e "${GREEN}│          TROJAN ACCOUNT MANAGER         │${NC}"
-echo -e "${GREEN}└──────────────────────────────────────────┘${NC}"
-echo -e "${YELLOW}┌──────────────────────────────────────────┐${NC}"
-echo -e "│  1. Create Trojan Account"
-echo -e "│  2. Trial Trojan Account"
-echo -e "│  3. Renew Trojan Account"
-echo -e "│  4. Delete Trojan Account"
-echo -e "│  5. Check Trojan Login"
-echo -e "│  6. List Trojan Member"
-echo -e "│  7. Delete Expired Trojan"
-echo -e "│  8. Backup Trojan Config"
-echo -e "│  9. Restore Trojan Config"
-echo -e "│ 10. ComeBack Menu"
-echo -e "└──────────────────────────────────────────┘${NC}"
-echo -ne "${YELLOW}Select From Options [ 1 - 10 ] : ${NC}"
-read opt
-
-case $opt in
-  1)
-    bash /root/menu/trojan/create.sh ;;
-  2)
-    bash /root/menu/trojan/trial.sh ;;
-  3)
-    bash /root/menu/trojan/renew.sh ;;
-  4)
-    bash /root/menu/trojan/delete.sh ;;
-  5)
-    bash /root/menu/trojan/cek-login.sh ;;
-  6)
-    bash /root/menu/trojan/list.sh ;;
-  7)
-    bash /root/menu/trojan/delete-expired.sh ;;
-  8)
-    bash /root/menu/trojan/backup.sh ;;
-  9)
-    bash /root/menu/trojan/restore.sh ;;
-  10)
-    bash /root/menu/menu.sh ;;
-  *)
-    echo -e "${RED}Opsi tidak tersedia.${NC}"
-    sleep 1
-    bash /root/menu/menu-trojan.sh ;;
+echo -e "${CYAN}┌──────────────────────────────────────────────┐${NC}"
+echo -e "${GREEN}│            MENU MANAGER TROJAN              │${NC}"
+echo -e "${CYAN}└──────────────────────────────────────────────┘${NC}"
+echo -e " ${GREEN}1.${NC}  Create TROJAN Account"
+echo -e " ${GREEN}2.${NC}  Trial TROJAN Account"
+echo -e " ${GREEN}3.${NC}  Renew TROJAN Account"
+echo -e " ${GREEN}4.${NC}  Delete TROJAN Account"
+echo -e " ${GREEN}5.${NC}  Check Login TROJAN Account"
+echo -e " ${GREEN}6.${NC}  List TROJAN User"
+echo -e " ${GREEN}7.${NC}  Delete User Expired"
+echo -e " ${GREEN}8.${NC}  Back to Main Menu"
+echo -e "${CYAN}────────────────────────────────────────────────${NC}"
+read -p "Select Menu TROJAN: " tr
+case $tr in
+  1) bash /root/menu/trojan/create.sh ;;
+  2) bash /root/menu/trojan/trial.sh ;;
+  3) bash /root/menu/trojan/renew.sh ;;
+  4) bash /root/menu/trojan/delete.sh ;;
+  5) bash /root/menu/trojan/cek.sh ;;
+  6) bash /root/menu/trojan/list.sh ;;
+  7) bash /root/menu/trojan/delete-exp.sh ;;
+  8) bash /root/menu/menu.sh ;;
+  *) echo -e "${RED}Invalid input!${NC}"; sleep 1; bash /root/menu/menu-trojan.sh ;;
 esac
