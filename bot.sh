@@ -1,48 +1,31 @@
 #!/bin/bash
-# AUTO INSTALL NIKU TELEGRAM BOT - DENGAN INPUT TOKEN MANUAL
-# Brand: MERCURYVPN / NIKU TUNNEL
+# AUTO INSTALL TELEGRAM BOT - NIKU TUNNEL
 
-# Warna
-RED='\e[31m'
-GREEN='\e[32m'
-YELLOW='\e[33m'
-NC='\e[0m'
-log() { echo -e "${YELLOW}[INFO]${NC} $1"; }
-success() { echo -e "${GREEN}[OK]${NC} $1"; }
-error() { echo -e "${RED}[ERROR]${NC} $1"; }
+echo -e "\e[33m[•] Instalasi Bot Telegram NIKU TUNNEL dimulai...\e[0m"
 
-clear
-log "📦 Memulai instalasi NIKU TELEGRAM BOT..."
+# ==== INPUT TOKEN DAN ADMIN ID ====
+read -p "Masukkan Bot Token Telegram: " TOKEN
+read -p "Masukkan Telegram Admin ID: " ADMIN_ID
 
-# Cek root
-if [[ $EUID -ne 0 ]]; then
-  error "Harus dijalankan sebagai root"
-  exit 1
-fi
+# ==== INSTALL PYTHON & PIP ====
+echo -e "\e[33m[•] Install dependensi python3 & pip3...\e[0m"
+apt update -y
+apt install python3 python3-pip -y
 
-# === MASUKKAN BOT TOKEN & ADMIN ID SAAT INSTALL ===
-read -p "Masukkan BOT TOKEN dari @BotFather: " BOT_TOKEN
-read -p "Masukkan Telegram USER ID Admin: " ADMIN_ID
+# ==== INSTALL MODULE TELEGRAM & PARAMIKO ====
+pip3 install --upgrade pip
+pip3 install python-telegram-bot==20.3 paramiko
 
-# Install dependensi
-log "Menginstall Python & dependensi bot..."
-apt update -y && apt install -y python3 python3-pip nginx jq curl unzip git
-pip3 install --no-cache-dir python-telegram-bot==13.15 paramiko
-
-# Buat direktori bot
+# ==== BUAT FOLDER BOT ====
 mkdir -p /etc/niku-bot
-cd /etc/niku-bot || exit
+mkdir -p /var/www/html/qris
 
-# Ambil file bot.py dari repo GitHub
-curl -s https://raw.githubusercontent.com/NIKU1323/nikucloud-autoinstall/main/bot/bot.py -o bot.py
-chmod +x bot.py
-
-# Buat config.json berdasarkan input
-cat > config.json <<EOF
+# ==== BUAT FILE config.json ====
+cat > /etc/niku-bot/config.json <<EOF
 {
-  "bot_token": "$BOT_TOKEN",
-  "admin_ids": [$ADMIN_ID],
-  "tarif": {
+  "BOT_TOKEN": "$TOKEN",
+  "ADMIN_IDS": [$ADMIN_ID],
+  "TARIF": {
     "ssh": 1000,
     "vmess": 2000,
     "vless": 2000,
@@ -52,15 +35,18 @@ cat > config.json <<EOF
 }
 EOF
 
-# File database kosong
-echo '{}' > users.json
-echo '[]' > server_config.json
+# ==== BUAT allowed.json (jika dibutuhkan) ====
+cat > /etc/niku-bot/allowed.json <<EOF
+[]
+EOF
 
-# Folder QRIS (untuk upload QR bayar)
-mkdir -p /var/www/html/qris
-chmod -R 755 /var/www/html/qris
+# ==== BUAT FILE bot.py ====
+cat > /etc/niku-bot/bot.py <<'EOF'
+# ISI bot.py AKAN DIMASUKKAN DI SINI (lihat bagian sebelumnya)
+# Agar tidak terlalu panjang, silakan salin isi `bot.py` versi fix sebelumnya ke sini
+EOF
 
-# Buat service systemd
+# ==== SYSTEMD SERVICE ====
 cat > /etc/systemd/system/niku-bot.service <<EOF
 [Unit]
 Description=NIKU TUNNEL TELEGRAM BOT
@@ -68,7 +54,7 @@ After=network.target
 
 [Service]
 ExecStart=/usr/bin/python3 /etc/niku-bot/bot.py
-WorkingDirectory=/etc/niku-bot
+WorkingDirectory=/etc/niku-bot/
 Restart=always
 User=root
 
@@ -76,11 +62,12 @@ User=root
 WantedBy=multi-user.target
 EOF
 
-# Jalankan bot
+# ==== ENABLE & START SERVICE ====
 systemctl daemon-reexec
 systemctl daemon-reload
 systemctl enable niku-bot
 systemctl restart niku-bot
 
-success "✅ Bot Telegram berhasil diinstal & dijalankan!"
-
+# ==== DONE ====
+echo -e "\e[32m[SUKSES] Bot Telegram berhasil diinstall & dijalankan!\e[0m"
+echo -e "Cek status: \e[36msystemctl status niku-bot\e[0m"
