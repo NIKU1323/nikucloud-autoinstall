@@ -33,7 +33,7 @@ validate_token() {
 # Automated input
 get_bot_config() {
   while true; do
-    read -p "Masukkan BOT TOKEN dari @BotFather: " bot_token
+    read -rp "Masukkan BOT TOKEN dari @BotFather: " bot_token
     if validate_token "$bot_token"; then
       break
     else
@@ -42,7 +42,7 @@ get_bot_config() {
   done
 
   while true; do
-    read -p "Masukkan ID ADMIN TELEGRAM (dapatkan dari @userinfobot): " admin_id
+    read -rp "Masukkan ID ADMIN TELEGRAM (dapatkan dari @userinfobot): " admin_id
     if validate_id "$admin_id"; then
       break
     else
@@ -61,7 +61,7 @@ pip3 install --no-cache-dir "python-telegram-bot>=20.3,<21.0" paramiko
 mkdir -p /etc/niku-bot
 cd /etc/niku-bot || exit
 
-# Download bot.py dari GitHub
+# Download bot.py dari GitHub (pastikan link ini sesuai repositori kamu)
 log "Mengunduh script bot..."
 curl -s https://raw.githubusercontent.com/NIKU1323/nikucloud-autoinstall/main/bot/bot.py -o bot.py
 chmod +x bot.py
@@ -69,7 +69,7 @@ chmod +x bot.py
 # Dapatkan konfigurasi bot
 get_bot_config
 
-# Buat config.json dengan tiered pricing
+# Buat config.json dengan tiered pricing default
 cat > config.json <<EOF
 {
   "BOT_TOKEN": "$bot_token",
@@ -104,15 +104,18 @@ cat > config.json <<EOF
 }
 EOF
 
-# File database kosong
-echo '{}' > users.json
-echo '[]' > server_config.json
+# Buat file database kosong jika belum ada
+[ ! -f users.json ] && echo '{}' > users.json
+[ ! -f server_config.json ] && echo '{"servers":[],"tarif":{}}' > server_config.json
 
-# Buat folder QRIS
+# Set permission
+chmod 600 config.json users.json server_config.json
+
+# Buat folder QRIS (jika diperlukan)
 mkdir -p /var/www/html/qris
 chmod -R 755 /var/www/html/qris
 
-# Buat systemd service
+# Buat systemd service untuk bot
 cat > /etc/systemd/system/niku-bot.service <<EOF
 [Unit]
 Description=NIKU TUNNEL TELEGRAM BOT
@@ -128,10 +131,10 @@ User=root
 WantedBy=multi-user.target
 EOF
 
-# Enable & start
+# Enable & start service
 systemctl daemon-reload
 systemctl enable niku-bot
-systemctl start niku-bot
+systemctl restart niku-bot
 
 # Verifikasi instalasi
 if systemctl is-active --quiet niku-bot; then
@@ -139,13 +142,10 @@ if systemctl is-active --quiet niku-bot; then
   echo -e "\n${GREEN}Konfigurasi:"
   echo -e "• Token Bot: $bot_token"
   echo -e "• Admin ID: $admin_id"
-  echo -e "• Tarif:"
-  echo -e "  - SSH: 7 hari (3000), 10 hari (5000), 15 hari (8000), 30 hari (15000)"
-  echo -e "  - VMESS: 7 hari (4000), 10 hari (6000), 15 hari (9000), 30 hari (18000)"
-  echo -e "  - VLESS: 7 hari (5000), 10 hari (7000), 15 hari (10000), 30 hari (20000)"
-  echo -e "  - Trojan: 7 hari (6000), 10 hari (8000), 15 hari (12000), 30 hari (25000)"
+  echo -e "• Tarif default sudah diterapkan (bisa diubah via panel admin)"
   echo -e "• Direktori Config: /etc/niku-bot"
   echo -e "• Service: systemctl status niku-bot${NC}"
 else
   error "Gagal menjalankan bot. Cek log dengan: journalctl -u niku-bot -f"
 fi
+
