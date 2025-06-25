@@ -3,10 +3,11 @@ import subprocess
 import os
 import time
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, InputFile
-from telegram.ext import (Application, CommandHandler, CallbackQueryHandler,
-                          MessageHandler, ConversationHandler, ContextTypes, filters)
+from telegram.ext import (
+    Application, CommandHandler, CallbackQueryHandler,
+    MessageHandler, ConversationHandler, ContextTypes, filters
+)
 
-# Load config
 with open("/etc/niku-bot/config.json") as f:
     config = json.load(f)
 
@@ -14,11 +15,8 @@ TOKEN = config["BOT_TOKEN"]
 ADMIN_IDS = config["ADMIN_IDS"]
 TARIF = config["TARIF"]
 
-# State untuk ConversationHandler
 (SELECT_TYPE, INPUT_USERNAME, INPUT_DAYS, INPUT_IP, INPUT_QUOTA) = range(5)
 user_data_map = {}
-
-# Fungsi tambahan
 
 def get_user_info(user_id: int):
     try:
@@ -72,7 +70,6 @@ def get_uptime():
     except:
         return "-"
 
-# Start command
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     user_id = user.id
@@ -111,7 +108,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup=reply_markup
     )
 
-# Callback utama
 async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -132,7 +128,6 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if user_id not in ADMIN_IDS:
             await query.edit_message_text("❌ Anda bukan admin.")
             return ConversationHandler.END
-
         keyboard = [
             [InlineKeyboardButton("➕ Tambah Saldo", callback_data="tambah_saldo"),
              InlineKeyboardButton("➖ Kurangi Saldo", callback_data="kurangi_saldo")],
@@ -148,11 +143,42 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text(f"👤 Role: {role}\n💰 Saldo Anda: Rp{saldo}")
         return ConversationHandler.END
 
+    elif data == "tambah_saldo":
+        await query.edit_message_text("📥 Masukkan ID dan jumlah saldo (contoh: `123456 5000`):", parse_mode="Markdown")
+        context.user_data["mode"] = "tambah"
+        return ConversationHandler.END
+
+    elif data == "kurangi_saldo":
+        await query.edit_message_text("📤 Masukkan ID dan jumlah saldo yang dikurangi (contoh: `123456 5000`):", parse_mode="Markdown")
+        context.user_data["mode"] = "kurangi"
+        return ConversationHandler.END
+
+    elif data == "upload_qris":
+        await query.edit_message_text("📤 Silakan kirim file gambar QRIS:")
+        context.user_data["mode"] = "upload_qris"
+        return ConversationHandler.END
+
+    elif data == "daftar_user":
+        try:
+            with open("/etc/niku-bot/users.json") as f:
+                users = json.load(f)
+            teks = "📋 Daftar User:\n"
+            for uid, info in users.items():
+                teks += f"• {uid} (@{info.get('username','-')}) — Rp{info.get('saldo',0)} [{info.get('role','Client')}]\n"
+            await query.edit_message_text(teks)
+        except:
+            await query.edit_message_text("❌ Gagal membaca data user.")
+        return ConversationHandler.END
+
+    elif data == "hapus_user":
+        await query.edit_message_text("🗑️ Kirim ID user yang ingin dihapus:")
+        context.user_data["mode"] = "hapus_user"
+        return ConversationHandler.END
+
     else:
         await query.edit_message_text(f"❌ Callback `{data}` belum tersedia.")
         return ConversationHandler.END
 
-# Proses pembuatan akun VPN
 async def select_type(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -197,7 +223,6 @@ async def input_quota(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"❌ Saldo tidak cukup. Tarif: Rp{tarif}, Saldo Anda: Rp{saldo}")
         return ConversationHandler.END
 
-    # Kurangi saldo
     update_user_saldo(user_id, tarif)
 
     cmd_map = {
@@ -214,16 +239,58 @@ async def input_quota(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         output = f"❌ Gagal menjalankan script: {e}"
 
-    await update.message.reply_text(f"✅ Hasil:\n```
-{output}
-```", parse_mode="Markdown")
+    await update.message.reply_text(f"✅ Hasil:\n```\n{output}\n```", parse_mode="Markdown")
     return ConversationHandler.END
+
+async def handle_admin_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    mode = context.user_data.get("mode")
+    text = update.message.text.strip()
+
+    if mode == "tambah" or mode == "kurangi":
+        if " " not in text:
+            await update.message.reply_text("❌ Format salah. Gunakan: `id jumlah`")
+            return
+        uid, amount = text.split()
+        uid = str(uid)
+        amount = int(amount)
+        with open("/etc/niku-bot/users.json") as f:
+            users = json.load(f)
+        if uid not in users:
+            await update.message.reply_text("❌ ID user tidak ditemukan.")
+            return
+        if mode == "tambah":
+            users[uid]["saldo"] += amount
+        else:
+            users[uid]["saldo"] -= amount
+        with open("/etc/niku-bot/users.json", "w") as f:
+            json.dump(users, f, indent=2)
+        await update.message.reply_text("✅ Saldo berhasil diperbarui.")
+        context.user_data["mode"] = None
+
+    elif mode == "hapus_user":
+        uid = text.strip()
+        with open("/etc/niku-bot/users.json") as f:
+            users = json.load(f)
+        if uid in users:
+            del users[uid]
+            with open("/etc/niku-bot/users.json", "w") as f:
+                json.dump(users, f, indent=2)
+            await update.message.reply_text(f"✅ User {uid} telah dihapus.")
+        else:
+            await update.message.reply_text("❌ ID user tidak ditemukan.")
+        context.user_data["mode"] = None
+
+async def handle_upload_qris(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    mode = context.user_data.get("mode")
+    if mode == "upload_qris" and update.message.document:
+        file = await update.message.document.get_file()
+        await file.download_to_drive("/etc/niku-bot/qris.png")
+        await update.message.reply_text("✅ QRIS berhasil diunggah.")
+        context.user_data["mode"] = None
 
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("❌ Dibatalkan oleh pengguna.")
+    await update.message.reply_text("❌ Dibatalkan.")
     return ConversationHandler.END
-
-# Main
 
 def main():
     app = Application.builder().token(TOKEN).build()
@@ -242,6 +309,8 @@ def main():
 
     app.add_handler(conv_handler)
     app.add_handler(CallbackQueryHandler(handle_callback))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_admin_input))
+    app.add_handler(MessageHandler(filters.Document.ALL, handle_upload_qris))
     app.run_polling()
 
 if __name__ == '__main__':
