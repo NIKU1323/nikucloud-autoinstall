@@ -1,5 +1,5 @@
 #!/bin/bash
-# AUTO INSTALL NIKU TUNNEL TELEGRAM BOT (Versi ringan, ambil bot.py dari GitHub)
+# AUTO INSTALL NIKU TUNNEL TELEGRAM BOT
 # Brand: MERCURYVPN / NIKU TUNNEL
 
 RED='\e[31m'
@@ -20,29 +20,25 @@ if [[ $EUID -ne 0 ]]; then
   exit 1
 fi
 
-# Minta input Token & ID Admin
-read -p "Masukkan BOT TOKEN (dari @BotFather): " BOT_TOKEN
-read -p "Masukkan ADMIN ID Telegram (tanpa @): " ADMIN_ID
-
-# Install dependensi
+# Install Python & dependensi bot
 log "Menginstall Python & dependensi bot..."
 apt update -y && apt install -y python3 python3-pip nginx jq curl unzip git
-pip3 install --no-cache-dir python-telegram-bot==13.15 paramiko
+pip3 install --upgrade pip
+pip3 install --no-cache-dir "python-telegram-bot>=20.3,<21.0" paramiko
 
-# Buat direktori bot
+# Buat folder bot
 mkdir -p /etc/niku-bot
 cd /etc/niku-bot || exit
 
-# Download bot.py dari GitHub
-log "Mengunduh bot.py dari GitHub..."
+# Download bot.py dari GitHub (pastikan sudah kamu upload ke GitHub repo kamu)
 curl -s https://raw.githubusercontent.com/NIKU1323/nikucloud-autoinstall/main/bot/bot.py -o bot.py
 chmod +x bot.py
 
-# Buat config.json otomatis
+# Buat config.json default
 cat > config.json <<EOF
 {
-  "BOT_TOKEN": "$BOT_TOKEN",
-  "ADMIN_IDS": [$ADMIN_ID],
+  "BOT_TOKEN": "ISI_TOKEN_DISINI",
+  "ADMIN_IDS": [123456789],
   "TARIF": {
     "ssh": 1000,
     "vmess": 2000,
@@ -53,11 +49,11 @@ cat > config.json <<EOF
 }
 EOF
 
-# Buat database user dan server kosong
+# File database kosong
 echo '{}' > users.json
 echo '[]' > server_config.json
 
-# Buat folder QRIS (opsional)
+# Buat folder QRIS
 mkdir -p /var/www/html/qris
 chmod -R 755 /var/www/html/qris
 
@@ -82,5 +78,5 @@ systemctl daemon-reexec
 systemctl enable niku-bot
 systemctl restart niku-bot
 
-success "Bot Telegram berhasil dipasang & dijalankan!"
-echo -e "${YELLOW}Silakan buka Telegram dan jalankan bot Anda.${NC}"
+success "Bot Telegram berhasil dipasang!"
+echo -e "${YELLOW}Silakan edit config.json untuk memasukkan BOT_TOKEN dan ID admin Telegram${NC}"
