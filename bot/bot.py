@@ -1,22 +1,25 @@
 import json
 import os
-from datetime import datetime
+import subprocess
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import Application, CommandHandler, CallbackContext, CallbackQueryHandler, MessageHandler, filters, ContextTypes
+from telegram.ext import (
+    Application, CommandHandler, CallbackQueryHandler,
+    MessageHandler, ContextTypes, filters
+)
 
 # Load config
 with open("/etc/niku-bot/config.json") as f:
     config = json.load(f)
 
-TOKEN = config["bot_token"]
-ADMIN_ID = config["admin_id"]
+TOKEN = config["BOT_TOKEN"]
+ADMIN_ID = config["ADMIN_IDS"][0] if isinstance(config["ADMIN_IDS"], list) else config["ADMIN_ID"]
 
-# Fungsi saat /start diketik
+# Sesi input user
+session_data = {}
+
+# /start
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
-    user_id = user.id
-    username = user.username or "N/A"
-
     keyboard = [
         [InlineKeyboardButton("🛡️ Beli Akun VPN", callback_data="beli_akun")],
         [InlineKeyboardButton("💳 Topup Saldo", callback_data="topup_saldo")],
@@ -24,30 +27,12 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("💰 Cek Saldo", callback_data="cek_saldo")],
         [InlineKeyboardButton("👑 Admin Panel", callback_data="admin_panel")],
     ]
+    await update.message.reply_text("Selamat datang di MERCURY VPN 👑", reply_markup=InlineKeyboardMarkup(keyboard))
 
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    text = (
-        "🛒 MERCURY VPN — Bot E-Commerce VPN & Digital\n"
-        "━━━━━━━━━━━━━━━━━━━━━━\n"
-        f"📈 Statistik Toko:\n"
-        f"• 👥 Pengguna: {user_id}\n"
-        f"• 🗄️ Jumlah Server VPN: -\n"
-        f"• ⏱️ Uptime Bot: -\n"
-        "━━━━━━━━━━━━━━━━━━━━━━\n"
-        f"👤 Akun Anda:\n"
-        f"• 🆔 ID: {user_id}\n"
-        f"• Username: @{username}\n"
-        f"• Role: {'Admin' if user_id == int(ADMIN_ID) else 'Client'}\n"
-        f"• Saldo: -\n"
-        "━━━━━━━━━━━━━━━━━━━━━━\n"
-        f"Customer Service: @mercurystore12\n"
-        "━━━━━━━━━━━━━━━━━━━━━━"
-    )
-    await update.message.reply_text(text, reply_markup=reply_markup)
-
-# Fungsi handle tombol
+# Handle tombol
 async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
+    user_id = query.from_user.id
     await query.answer()
     data = query.data
 
@@ -58,32 +43,97 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             [InlineKeyboardButton("VLESS", callback_data="beli_vless"),
              InlineKeyboardButton("TROJAN", callback_data="beli_trojan")]
         ]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        await query.edit_message_text("Pilih jenis akun:", reply_markup=reply_markup)
+        await query.edit_message_text("Pilih jenis akun VPN:", reply_markup=InlineKeyboardMarkup(keyboard))
 
-    elif data == "admin_panel":
-        keyboard = [
-            [InlineKeyboardButton("➕ Tambah Saldo", callback_data="tambah_saldo"),
-             InlineKeyboardButton("➖ Kurangi Saldo", callback_data="kurangi_saldo")],
-            [InlineKeyboardButton("📋 Daftar User", callback_data="daftar_user"),
-             InlineKeyboardButton("🗑️ Hapus User", callback_data="hapus_user")],
-            [InlineKeyboardButton("💰 Atur Tarif", callback_data="atur_tarif"),
-             InlineKeyboardButton("🧩 Server VPN", callback_data="server_vpn")],
-            [InlineKeyboardButton("📤 Upload QRIS", callback_data="upload_qris")]
-        ]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        await query.edit_message_text("👑 Menu Admin", reply_markup=reply_markup)
+    elif data in ["beli_ssh", "beli_vmess", "beli_vless", "beli_trojan"]:
+        jenis = data.replace("beli_", "")
+        session_data[user_id] = {"step": "username", "jenis": jenis}
+        await query.edit_message_text(f"🧾 Masukkan username akun {jenis.upper()}:")
+
+    elif data == "reg_ip":
+        ip = os.popen("curl -s ipv4.icanhazip.com").read().strip()
+        allowed_path = "/var/www/html/allowed.json"
+        try:
+            if not os.path.exists(allowed_path):
+                with open(allowed_path, "w") as f:
+                    json.dump([], f)
+            with open(allowed_path, "r+") as f:
+                allowed = json.load(f)
+                if ip not in allowed:
+                    allowed.append(ip)
+                    f.seek(0)
+                    json.dump(allowed, f, indent=2)
+                    f.truncate()
+            await query.edit_message_text(f"✅ IP VPS {ip} berhasil diregistrasi.")
+        except Exception as e:
+            await query.edit_message_text(f"❌ Gagal registrasi IP: {e}")
 
     else:
-        await query.edit_message_text(f"❌ Gagal: Callback `{data}` belum tersedia.")
+        await query.edit_message_text("❌ Menu belum tersedia.")
 
-# Jalankan bot
+# Input bertahap semua jenis akun
+async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    text = update.message.text.strip()
+
+    if user_id not in session_data:
+        await update.message.reply_text("❗ Tidak ada proses aktif. Klik tombol menu terlebih dahulu.")
+        return
+
+    data = session_data[user_id]
+    step = data.get("step")
+    jenis = data.get("jenis", "ssh")
+
+    if step == "username":
+        data["username"] = text
+        data["step"] = "hari"
+        await update.message.reply_text("⏳ Masukkan masa aktif akun (hari):")
+    elif step == "hari":
+        if not text.isdigit():
+            await update.message.reply_text("❌ Harus angka. Masukkan masa aktif:")
+            return
+        data["hari"] = text
+        data["step"] = "iplimit"
+        await update.message.reply_text("🔢 Masukkan limit IP login:")
+    elif step == "iplimit":
+        if not text.isdigit():
+            await update.message.reply_text("❌ Harus angka. Masukkan IP limit:")
+            return
+        data["iplimit"] = text
+        data["step"] = "kuota"
+        await update.message.reply_text("📦 Masukkan kuota akun (dalam GB):")
+    elif step == "kuota":
+        if not text.isdigit():
+            await update.message.reply_text("❌ Harus angka. Masukkan kuota GB:")
+            return
+        data["kuota"] = text
+
+        # Eksekusi perintah
+        username = data["username"]
+        hari = data["hari"]
+        iplimit = data["iplimit"]
+        kuota = data["kuota"]
+        command = f"bash /root/menu/menu-{jenis}.sh add {username} {hari} {iplimit} {kuota}"
+
+        try:
+            output = subprocess.check_output(command, shell=True, stderr=subprocess.STDOUT, text=True)
+        except subprocess.CalledProcessError as e:
+            output = f"❌ Gagal membuat akun:\n{e.output}"
+
+        await update.message.reply_text(f"✅ Akun {jenis.upper()} berhasil dibuat:\n\n<code>{output}</code>", parse_mode="HTML")
+        session_data.pop(user_id)
+    else:
+        await update.message.reply_text("❗ Sesi tidak valid. Mulai ulang.")
+        session_data.pop(user_id, None)
+
+# Main bot
 def main():
     app = Application.builder().token(TOKEN).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CallbackQueryHandler(handle_callback))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     app.run_polling()
 
 if __name__ == '__main__':
     main()
-  
+    
