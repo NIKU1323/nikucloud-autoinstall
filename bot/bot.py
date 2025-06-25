@@ -507,4 +507,64 @@ def main():
         ],
         states={
             MENU: [
-                CallbackQueryHandler(handle_callb
+                CallbackQueryHandler(handle_callback)
+            ],
+            SELECT_TYPE: [
+                CallbackQueryHandler(handle_callback)
+            ],
+            INPUT_USERNAME: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, input_username)
+            ],
+            INPUT_DAYS: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, input_days)
+            ],
+            INPUT_IP: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, input_ip)
+            ],
+            INPUT_QUOTA: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, input_quota)
+            ],
+            INPUT_TOPUP_ID: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, input_topup_id)
+            ],
+            INPUT_TOPUP_AMOUNT: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, input_topup_amount)
+            ],
+            INPUT_KURANG_ID: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, input_kurang_id)
+            ],
+            INPUT_KURANG_AMOUNT: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, input_kurang_amount)
+            ],
+            INPUT_TARIF_TYPE: [
+                CallbackQueryHandler(input_tarif_type, pattern="^tarif_")
+            ],
+            INPUT_TARIF_DURATION: [
+                CallbackQueryHandler(input_tarif_duration, pattern="^durasi_")
+            ],
+            INPUT_TARIF_VALUE: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, input_tarif_value)
+            ],
+            INPUT_EDIT_ROLE_ID: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, input_edit_role_id)
+            ],
+            INPUT_EDIT_ROLE_VALUE: [
+                CallbackQueryHandler(input_edit_role_value, pattern="^role_")
+            ],
+            INPUT_ADD_SERVER_IP: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, input_add_server_ip)
+            ],
+            INPUT_ADD_SERVER_DESC: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, input_add_server_desc)
+            ],
+        },
+        fallbacks=[CommandHandler("cancel", cancel)],
+        allow_reentry=True
+    )
+
+    app.add_handler(conv_handler)
+    app.run_polling()
+
+if __name__ == "__main__":
+    main()
+
