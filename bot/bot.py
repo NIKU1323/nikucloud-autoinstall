@@ -1,6 +1,7 @@
 import json
 import subprocess
 import os
+import time
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, InputFile
 from telegram.ext import (Application, CommandHandler, CallbackQueryHandler,
                           MessageHandler, ConversationHandler, ContextTypes, filters)
@@ -11,6 +12,7 @@ with open("/etc/niku-bot/config.json") as f:
 
 TOKEN = config["BOT_TOKEN"]
 ADMIN_IDS = config["ADMIN_IDS"]
+TARIF = config["TARIF"]
 
 # State untuk ConversationHandler
 (SELECT_TYPE, INPUT_USERNAME, INPUT_DAYS, INPUT_IP, INPUT_QUOTA) = range(5)
@@ -28,6 +30,20 @@ def get_user_info(user_id: int):
         return role, saldo
     except:
         return "Client", 0
+
+def update_user_saldo(user_id: int, amount: int):
+    try:
+        with open("/etc/niku-bot/users.json") as f:
+            users = json.load(f)
+        uid = str(user_id)
+        if uid in users:
+            users[uid]["saldo"] -= amount
+            with open("/etc/niku-bot/users.json", "w") as f:
+                json.dump(users, f, indent=2)
+            return True
+    except:
+        pass
+    return False
 
 def count_users():
     try:
@@ -174,6 +190,16 @@ async def input_quota(update: Update, context: ContextTypes.DEFAULT_TYPE):
     iplimit = user_data["ip"]
     quota = user_data["quota"]
 
+    tarif = TARIF.get(jenis, 0)
+    role, saldo = get_user_info(user_id)
+
+    if saldo < tarif:
+        await update.message.reply_text(f"❌ Saldo tidak cukup. Tarif: Rp{tarif}, Saldo Anda: Rp{saldo}")
+        return ConversationHandler.END
+
+    # Kurangi saldo
+    update_user_saldo(user_id, tarif)
+
     cmd_map = {
         "ssh": "/root/menu/menu-ssh.sh",
         "vmess": "/root/menu/menu-vmess.sh",
@@ -198,6 +224,7 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return ConversationHandler.END
 
 # Main
+
 def main():
     app = Application.builder().token(TOKEN).build()
 
@@ -219,4 +246,4 @@ def main():
 
 if __name__ == '__main__':
     main()
-    
+  
