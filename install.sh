@@ -284,6 +284,10 @@ chmod +x /root/menu/trojan/*.sh
 chmod +x /root/menu/vmess/*.sh
 [[ $(grep -c menu.sh /root/.bashrc) == 0 ]] && echo "clear && bash /root/menu/menu.sh" >> /root/.bashrc
 
+# Biar bisa akses cukup ketik "menu"
+ln -sf /root/menu/menu.sh /usr/local/bin/menu
+chmod +x /usr/local/bin/menu
+
 log_success "✅ Instalasi selesai!"
 read -p "Reboot VPS sekarang? (y/n): " jawab
 [[ "$jawab" == "y" || "$jawab" == "Y" ]] && reboot
