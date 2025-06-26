@@ -1,5 +1,6 @@
 #!/bin/bash
-# COMPLETE VPN INSTALLATION SCRIPT WITH FULL MENU SYSTEM
+# COMPLETE VPN INSTALLATION SCRIPT WITH ALL FIXES
+# Fixed: Xray download, menu installation, and error handling
 # Includes: Xray (VMESS/VLESS/Trojan), SSH, Nginx, HAProxy, and Complete Menu System
 
 # Colors
@@ -24,29 +25,54 @@ handle_error() {
 
 trap 'handle_error $LINENO' ERR
 
-# Install dependencies
-echo -e "${YELLOW}[1/9] Installing dependencies...${NC}"
-apt update && apt upgrade -y
-apt install -y jq curl socat openssl wget unzip screen nginx dropbear squid haproxy python3 python3-pip cron
+# Cleanup previous installation
+cleanup() {
+    echo -e "${YELLOW}Cleaning up previous installation...${NC}"
+    systemctl stop xray nginx haproxy 2>/dev/null
+    rm -rf /tmp/xray /usr/bin/xray /etc/xray /root/menu
+}
 
-# Install Xray
-echo -e "${YELLOW}[2/9] Installing Xray...${NC}"
-mkdir -p /var/log/xray /tmp/xray
-cd /tmp/xray
-XRAY_URL=$(curl -s https://api.github.com/repos/XTLS/Xray-core/releases/latest | grep browser_download_url | grep linux-64.zip | cut -d '"' -f 4)
-wget -O xray.zip "$XRAY_URL" || { echo -e "${RED}Failed to download Xray${NC}"; exit 1; }
-unzip xray.zip
-install -m 755 xray /usr/bin/xray
+# Install dependencies
+install_deps() {
+    echo -e "${YELLOW}[1/9] Installing dependencies...${NC}"
+    apt update && apt upgrade -y
+    apt install -y jq curl socat openssl wget unzip screen nginx dropbear squid haproxy python3 python3-pip cron
+}
+
+# Install Xray (fixed version)
+install_xray() {
+    echo -e "${YELLOW}[2/9] Installing Xray...${NC}"
+    mkdir -p /var/log/xray /tmp/xray
+    cd /tmp/xray
+
+    # Direct download URL (no API parsing)
+    XRAY_URL="https://github.com/XTLS/Xray-core/releases/latest/download/Xray-linux-64.zip"
+
+    # Download with retry
+    for i in {1..3}; do
+        wget --timeout=30 --tries=3 -O xray.zip "$XRAY_URL" && break || {
+            echo -e "${YELLOW}Attempt $i failed, retrying...${NC}"
+            sleep 3
+            [ $i -eq 3 ] && { echo -e "${RED}Failed to download Xray after 3 attempts${NC}"; exit 1; }
+        }
+    done
+
+    unzip xray.zip || { echo -e "${RED}Failed to extract Xray${NC}"; exit 1; }
+    install -m 755 xray /usr/bin/xray || { echo -e "${RED}Failed to install Xray binary${NC}"; exit 1; }
+}
 
 # Install geo data
-echo -e "${YELLOW}[3/9] Installing geo data...${NC}"
-wget -O /usr/bin/geoip.dat https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geoip.dat
-wget -O /usr/bin/geosite.dat https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geosite.dat
+install_geo() {
+    echo -e "${YELLOW}[3/9] Installing geo data...${NC}"
+    wget --timeout=30 -O /usr/bin/geoip.dat https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geoip.dat
+    wget --timeout=30 -O /usr/bin/geosite.dat https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geosite.dat
+}
 
 # Configure Xray
-echo -e "${YELLOW}[4/9] Configuring Xray...${NC}"
-mkdir -p /etc/xray
-cat > /etc/xray/config.json <<EOF
+configure_xray() {
+    echo -e "${YELLOW}[4/9] Configuring Xray...${NC}"
+    mkdir -p /etc/xray
+    cat > /etc/xray/config.json <<EOF
 {
   "log": {
     "access": "/var/log/xray/access.log",
@@ -91,10 +117,12 @@ cat > /etc/xray/config.json <<EOF
   ]
 }
 EOF
+}
 
 # Create Xray service
-echo -e "${YELLOW}[5/9] Creating Xray service...${NC}"
-cat > /etc/systemd/system/xray.service <<EOF
+create_xray_service() {
+    echo -e "${YELLOW}[5/9] Creating Xray service...${NC}"
+    cat > /etc/systemd/system/xray.service <<EOF
 [Unit]
 Description=Xray Service
 After=network.target
@@ -108,10 +136,12 @@ User=root
 [Install]
 WantedBy=multi-user.target
 EOF
+}
 
 # Configure HAProxy
-echo -e "${YELLOW}[6/9] Configuring HAProxy...${NC}"
-cat > /etc/haproxy/haproxy.cfg <<EOF
+configure_haproxy() {
+    echo -e "${YELLOW}[6/9] Configuring HAProxy...${NC}"
+    cat > /etc/haproxy/haproxy.cfg <<EOF
 global
     daemon
     maxconn 2048
@@ -141,85 +171,102 @@ backend ssh_tls
     mode tcp
     server ssh 127.0.0.1:22
 EOF
+}
 
 # Install complete menu system
-echo -e "${YELLOW}[7/9] Installing complete menu system...${NC}"
-mkdir -p /root/menu && cd /root/menu
+install_menu() {
+    echo -e "${YELLOW}[7/9] Installing complete menu system...${NC}"
+    mkdir -p /root/menu && cd /root/menu
 
-# Main menu scripts
-wget -q https://raw.githubusercontent.com/NIKU1323/nikucloud-autoinstall/main/menu/menu.sh
-wget -q https://raw.githubusercontent.com/NIKU1323/nikucloud-autoinstall/main/menu/menu-ssh.sh
-wget -q https://raw.githubusercontent.com/NIKU1323/nikucloud-autoinstall/main/menu/menu-vmess.sh
-wget -q https://raw.githubusercontent.com/NIKU1323/nikucloud-autoinstall/main/menu/menu-vless.sh
-wget -q https://raw.githubusercontent.com/NIKU1323/nikucloud-autoinstall/main/menu/menu-trojan.sh
-wget -q https://raw.githubusercontent.com/NIKU1323/nikucloud-autoinstall/main/menu/menu-tools.sh
+    # Main menu scripts
+    wget --timeout=30 -q https://raw.githubusercontent.com/NIKU1323/nikucloud-autoinstall/main/menu/menu.sh
+    wget --timeout=30 -q https://raw.githubusercontent.com/NIKU1323/nikucloud-autoinstall/main/menu/menu-ssh.sh
+    wget --timeout=30 -q https://raw.githubusercontent.com/NIKU1323/nikucloud-autoinstall/main/menu/menu-vmess.sh
+    wget --timeout=30 -q https://raw.githubusercontent.com/NIKU1323/nikucloud-autoinstall/main/menu/menu-vless.sh
+    wget --timeout=30 -q https://raw.githubusercontent.com/NIKU1323/nikucloud-autoinstall/main/menu/menu-trojan.sh
+    wget --timeout=30 -q https://raw.githubusercontent.com/NIKU1323/nikucloud-autoinstall/main/menu/menu-tools.sh
 
-# SSH submenu
-mkdir -p /root/menu/ssh
-wget -q -O /root/menu/ssh/create.sh https://raw.githubusercontent.com/NIKU1323/nikucloud-autoinstall/main/menu/ssh/create.sh
-wget -q -O /root/menu/ssh/autokill.sh https://raw.githubusercontent.com/NIKU1323/nikucloud-autoinstall/main/menu/ssh/autokill.sh
-wget -q -O /root/menu/ssh/cek.sh https://raw.githubusercontent.com/NIKU1323/nikucloud-autoinstall/main/menu/ssh/cek.sh
-wget -q -O /root/menu/ssh/lock.sh https://raw.githubusercontent.com/NIKU1323/nikucloud-autoinstall/main/menu/ssh/lock.sh
-wget -q -O /root/menu/ssh/list.sh https://raw.githubusercontent.com/NIKU1323/nikucloud-autoinstall/main/menu/ssh/list.sh
-wget -q -O /root/menu/ssh/delete-exp.sh https://raw.githubusercontent.com/NIKU1323/nikucloud-autoinstall/main/menu/ssh/delete-exp.sh
-wget -q -O /root/menu/ssh/delete.sh https://raw.githubusercontent.com/NIKU1323/nikucloud-autoinstall/main/menu/ssh/delete.sh
-wget -q -O /root/menu/ssh/unlock.sh https://raw.githubusercontent.com/NIKU1323/nikucloud-autoinstall/main/menu/ssh/unlock.sh
-wget -q -O /root/menu/ssh/trial.sh https://raw.githubusercontent.com/NIKU1323/nikucloud-autoinstall/main/menu/ssh/trial.sh
-wget -q -O /root/menu/ssh/multilogin.sh https://raw.githubusercontent.com/NIKU1323/nikucloud-autoinstall/main/menu/ssh/multilogin.sh
-wget -q -O /root/menu/ssh/renew.sh https://raw.githubusercontent.com/NIKU1323/nikucloud-autoinstall/main/menu/ssh/renew.sh
+    # SSH submenu
+    mkdir -p /root/menu/ssh
+    wget --timeout=30 -q -O /root/menu/ssh/create.sh https://raw.githubusercontent.com/NIKU1323/nikucloud-autoinstall/main/menu/ssh/create.sh
+    wget --timeout=30 -q -O /root/menu/ssh/autokill.sh https://raw.githubusercontent.com/NIKU1323/nikucloud-autoinstall/main/menu/ssh/autokill.sh
+    wget --timeout=30 -q -O /root/menu/ssh/cek.sh https://raw.githubusercontent.com/NIKU1323/nikucloud-autoinstall/main/menu/ssh/cek.sh
+    wget --timeout=30 -q -O /root/menu/ssh/lock.sh https://raw.githubusercontent.com/NIKU1323/nikucloud-autoinstall/main/menu/ssh/lock.sh
+    wget --timeout=30 -q -O /root/menu/ssh/list.sh https://raw.githubusercontent.com/NIKU1323/nikucloud-autoinstall/main/menu/ssh/list.sh
+    wget --timeout=30 -q -O /root/menu/ssh/delete-exp.sh https://raw.githubusercontent.com/NIKU1323/nikucloud-autoinstall/main/menu/ssh/delete-exp.sh
+    wget --timeout=30 -q -O /root/menu/ssh/delete.sh https://raw.githubusercontent.com/NIKU1323/nikucloud-autoinstall/main/menu/ssh/delete.sh
+    wget --timeout=30 -q -O /root/menu/ssh/unlock.sh https://raw.githubusercontent.com/NIKU1323/nikucloud-autoinstall/main/menu/ssh/unlock.sh
+    wget --timeout=30 -q -O /root/menu/ssh/trial.sh https://raw.githubusercontent.com/NIKU1323/nikucloud-autoinstall/main/menu/ssh/trial.sh
+    wget --timeout=30 -q -O /root/menu/ssh/multilogin.sh https://raw.githubusercontent.com/NIKU1323/nikucloud-autoinstall/main/menu/ssh/multilogin.sh
+    wget --timeout=30 -q -O /root/menu/ssh/renew.sh https://raw.githubusercontent.com/NIKU1323/nikucloud-autoinstall/main/menu/ssh/renew.sh
 
-# VMESS submenu
-mkdir -p /root/menu/vmess
-wget -q -O /root/menu/vmess/create.sh https://raw.githubusercontent.com/NIKU1323/nikucloud-autoinstall/main/menu/vmess/create.sh
-wget -q -O /root/menu/vmess/autokill.sh https://raw.githubusercontent.com/NIKU1323/nikucloud-autoinstall/main/menu/vmess/renew.sh
-wget -q -O /root/menu/vmess/cek.sh https://raw.githubusercontent.com/NIKU1323/nikucloud-autoinstall/main/menu/vmess/cek.sh
-wget -q -O /root/menu/vmess/lock.sh https://raw.githubusercontent.com/NIKU1323/nikucloud-autoinstall/main/menu/vmess/trial.sh
-wget -q -O /root/menu/vmess/list.sh https://raw.githubusercontent.com/NIKU1323/nikucloud-autoinstall/main/menu/vmess/list.sh
-wget -q -O /root/menu/vmess/delete-exp.sh https://raw.githubusercontent.com/NIKU1323/nikucloud-autoinstall/main/menu/vmess/delete-exp.sh
-wget -q -O /root/menu/vmess/delete.sh https://raw.githubusercontent.com/NIKU1323/nikucloud-autoinstall/main/menu/vmess/delete.sh
+    # VMESS submenu
+    mkdir -p /root/menu/vmess
+    wget --timeout=30 -q -O /root/menu/vmess/create.sh https://raw.githubusercontent.com/NIKU1323/nikucloud-autoinstall/main/menu/vmess/create.sh
+    wget --timeout=30 -q -O /root/menu/vmess/autokill.sh https://raw.githubusercontent.com/NIKU1323/nikucloud-autoinstall/main/menu/vmess/renew.sh
+    wget --timeout=30 -q -O /root/menu/vmess/cek.sh https://raw.githubusercontent.com/NIKU1323/nikucloud-autoinstall/main/menu/vmess/cek.sh
+    wget --timeout=30 -q -O /root/menu/vmess/lock.sh https://raw.githubusercontent.com/NIKU1323/nikucloud-autoinstall/main/menu/vmess/trial.sh
+    wget --timeout=30 -q -O /root/menu/vmess/list.sh https://raw.githubusercontent.com/NIKU1323/nikucloud-autoinstall/main/menu/vmess/list.sh
+    wget --timeout=30 -q -O /root/menu/vmess/delete-exp.sh https://raw.githubusercontent.com/NIKU1323/nikucloud-autoinstall/main/menu/vmess/delete-exp.sh
+    wget --timeout=30 -q -O /root/menu/vmess/delete.sh https://raw.githubusercontent.com/NIKU1323/nikucloud-autoinstall/main/menu/vmess/delete.sh
 
-# VLESS submenu
-mkdir -p /root/menu/vless
-wget -q -O /root/menu/vless/create.sh https://raw.githubusercontent.com/NIKU1323/nikucloud-autoinstall/main/menu/vless/create.sh
-wget -q -O /root/menu/vless/autokill.sh https://raw.githubusercontent.com/NIKU1323/nikucloud-autoinstall/main/menu/vless/renew.sh
-wget -q -O /root/menu/vless/cek.sh https://raw.githubusercontent.com/NIKU1323/nikucloud-autoinstall/main/menu/vless/cek.sh
-wget -q -O /root/menu/vless/lock.sh https://raw.githubusercontent.com/NIKU1323/nikucloud-autoinstall/main/menu/vless/trial.sh
-wget -q -O /root/menu/vless/list.sh https://raw.githubusercontent.com/NIKU1323/nikucloud-autoinstall/main/menu/vless/list.sh
-wget -q -O /root/menu/vless/delete-exp.sh https://raw.githubusercontent.com/NIKU1323/nikucloud-autoinstall/main/menu/vless/delete-exp.sh
-wget -q -O /root/menu/vless/delete.sh https://raw.githubusercontent.com/NIKU1323/nikucloud-autoinstall/main/menu/vless/delete.sh
+    # VLESS submenu
+    mkdir -p /root/menu/vless
+    wget --timeout=30 -q -O /root/menu/vless/create.sh https://raw.githubusercontent.com/NIKU1323/nikucloud-autoinstall/main/menu/vless/create.sh
+    wget --timeout=30 -q -O /root/menu/vless/autokill.sh https://raw.githubusercontent.com/NIKU1323/nikucloud-autoinstall/main/menu/vless/renew.sh
+    wget --timeout=30 -q -O /root/menu/vless/cek.sh https://raw.githubusercontent.com/NIKU1323/nikucloud-autoinstall/main/menu/vless/cek.sh
+    wget --timeout=30 -q -O /root/menu/vless/lock.sh https://raw.githubusercontent.com/NIKU1323/nikucloud-autoinstall/main/menu/vless/trial.sh
+    wget --timeout=30 -q -O /root/menu/vless/list.sh https://raw.githubusercontent.com/NIKU1323/nikucloud-autoinstall/main/menu/vless/list.sh
+    wget --timeout=30 -q -O /root/menu/vless/delete-exp.sh https://raw.githubusercontent.com/NIKU1323/nikucloud-autoinstall/main/menu/vless/delete-exp.sh
+    wget --timeout=30 -q -O /root/menu/vless/delete.sh https://raw.githubusercontent.com/NIKU1323/nikucloud-autoinstall/main/menu/vless/delete.sh
 
-# Trojan submenu
-mkdir -p /root/menu/trojan
-wget -q -O /root/menu/trojan/create.sh https://raw.githubusercontent.com/NIKU1323/nikucloud-autoinstall/main/menu/trojan/create.sh
-wget -q -O /root/menu/trojan/autokill.sh https://raw.githubusercontent.com/NIKU1323/nikucloud-autoinstall/main/menu/trojan/renew.sh
-wget -q -O /root/menu/trojan/cek.sh https://raw.githubusercontent.com/NIKU1323/nikucloud-autoinstall/main/menu/trojan/cek.sh
-wget -q -O /root/menu/trojan/lock.sh https://raw.githubusercontent.com/NIKU1323/nikucloud-autoinstall/main/menu/trojan/trial.sh
-wget -q -O /root/menu/trojan/list.sh https://raw.githubusercontent.com/NIKU1323/nikucloud-autoinstall/main/menu/trojan/list.sh
-wget -q -O /root/menu/trojan/delete-exp.sh https://raw.githubusercontent.com/NIKU1323/nikucloud-autoinstall/main/menu/trojan/delete-exp.sh
-wget -q -O /root/menu/trojan/delete.sh https://raw.githubusercontent.com/NIKU1323/nikucloud-autoinstall/main/menu/trojan/delete.sh
+    # Trojan submenu
+    mkdir -p /root/menu/trojan
+    wget --timeout=30 -q -O /root/menu/trojan/create.sh https://raw.githubusercontent.com/NIKU1323/nikucloud-autoinstall/main/menu/trojan/create.sh
+    wget --timeout=30 -q -O /root/menu/trojan/autokill.sh https://raw.githubusercontent.com/NIKU1323/nikucloud-autoinstall/main/menu/trojan/renew.sh
+    wget --timeout=30 -q -O /root/menu/trojan/cek.sh https://raw.githubusercontent.com/NIKU1323/nikucloud-autoinstall/main/menu/trojan/cek.sh
+    wget --timeout=30 -q -O /root/menu/trojan/lock.sh https://raw.githubusercontent.com/NIKU1323/nikucloud-autoinstall/main/menu/trojan/trial.sh
+    wget --timeout=30 -q -O /root/menu/trojan/list.sh https://raw.githubusercontent.com/NIKU1323/nikucloud-autoinstall/main/menu/trojan/list.sh
+    wget --timeout=30 -q -O /root/menu/trojan/delete-exp.sh https://raw.githubusercontent.com/NIKU1323/nikucloud-autoinstall/main/menu/trojan/delete-exp.sh
+    wget --timeout=30 -q -O /root/menu/trojan/delete.sh https://raw.githubusercontent.com/NIKU1323/nikucloud-autoinstall/main/menu/trojan/delete.sh
 
-# Set permissions
-echo -e "${YELLOW}[8/9] Setting permissions...${NC}"
-chmod +x /root/menu/*.sh
-chmod +x /root/menu/menu-tools/*.sh
-chmod +x /root/menu/ssh/*.sh
-chmod +x /root/menu/vless/*.sh
-chmod +x /root/menu/trojan/*.sh
-chmod +x /root/menu/vmess/*.sh
+    # Set permissions
+    chmod +x /root/menu/*.sh
+    chmod +x /root/menu/menu-tools/*.sh
+    chmod +x /root/menu/ssh/*.sh
+    chmod +x /root/menu/vless/*.sh
+    chmod +x /root/menu/trojan/*.sh
+    chmod +x /root/menu/vmess/*.sh
+}
 
-# Create symlink and add to .bashrc
-echo -e "${YELLOW}[9/9] Finalizing installation...${NC}"
-ln -sf /root/menu/menu.sh /usr/local/bin/menu
-chmod +x /usr/local/bin/menu
+# Final configuration
+final_setup() {
+    echo -e "${YELLOW}[8/9] Finalizing installation...${NC}"
+    # Create symlink
+    ln -sf /root/menu/menu.sh /usr/local/bin/menu
+    chmod +x /usr/local/bin/menu
 
-if ! grep -q "menu.sh" /root/.bashrc; then
-    echo "clear && /root/menu/menu.sh" >> /root/.bashrc
-fi
+    # Add to .bashrc
+    if ! grep -q "menu.sh" /root/.bashrc; then
+        echo "clear && /root/menu/menu.sh" >> /root/.bashrc
+    fi
 
-# Enable services
-systemctl daemon-reload
-systemctl enable xray nginx haproxy
-systemctl restart xray nginx haproxy
+    # Enable services
+    systemctl daemon-reload
+    systemctl enable xray nginx haproxy
+    systemctl restart xray nginx haproxy
+}
+
+# Main installation flow
+cleanup
+install_deps
+install_xray
+install_geo
+configure_xray
+create_xray_service
+configure_haproxy
+install_menu
+final_setup
 
 # Completion message
 echo -e "${GREEN}Installation completed successfully!${NC}"
