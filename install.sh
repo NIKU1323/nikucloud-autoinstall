@@ -89,6 +89,9 @@ systemctl daemon-reload
 systemctl enable udp-custom
 systemctl start udp-custom
 
+log_info "Menghentikan nginx sementara untuk generate SSL..."
+systemctl stop nginx
+
 # Install ACME & SSL
 log_info "Pasang SSL Let's Encrypt..."
 curl https://get.acme.sh | sh
@@ -97,6 +100,10 @@ curl https://get.acme.sh | sh
  --fullchain-file /etc/xray/cert.pem \
  --key-file /etc/xray/key.pem \
  --ecc
+
+log_info "Menyalakan kembali nginx..."
+systemctl start nginx
+
 cat /etc/xray/cert.pem /etc/xray/key.pem > /etc/xray/haproxy.pem
 chmod 600 /etc/xray/haproxy.pem
 
