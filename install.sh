@@ -20,6 +20,8 @@ if [[ $EUID -ne 0 ]]; then
    log_error "Script ini harus dijalankan sebagai root"
    exit 1
 fi
+apt update -y
+apt install -y jq curl
 
 # Validasi IP VPS dari allowed.json
 IPVPS=$(curl -s ipv4.icanhazip.com)
