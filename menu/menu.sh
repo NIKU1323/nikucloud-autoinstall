@@ -5,9 +5,9 @@ NC='\e[0m'
 RED='\e[31m'
 GREEN='\e[32m'
 YELLOW='\e[33m'
-CYAN='\e[36m'
+CYAN='\e[1;97m'       # putih cerah + tebal untuk frame & garis
 MAGENTA='\e[35m'
-WHITE='\e[97m'
+WHITE_BOLD='\e[1;97m'  # putih cerah + tebal untuk teks utama
 
 # Info Sistem
 domain=$(cat /etc/xray/domain)
@@ -35,17 +35,17 @@ clear
 echo -e "${CYAN}────────────────────────────────────────────────────"
 echo -e "         .::::. ${YELLOW}NIKU TUNNEL / MERCURYVPN${CYAN} .::::."
 echo -e "────────────────────────────────────────────────────${NC}"
-echo -e "${WHITE} ┌────────────────────────────────────────────┐${NC}"
-echo -e "${WHITE} │ SYS OS : ${MAGENTA}$os_name${WHITE}"
-echo -e " │ RAM    : ${MAGENTA}${ram_used}MB / ${ram_total}MB${WHITE}"
-echo -e " │ UPTIME : ${MAGENTA}$uptime_sys${WHITE}"
-echo -e " │ CORE   : ${MAGENTA}$core${WHITE}"
-echo -e " │ ISP    : ${MAGENTA}$isp${WHITE}"
-echo -e " │ CITY   : ${MAGENTA}$city${WHITE}"
-echo -e " │ IP     : ${MAGENTA}$ip_vps${WHITE}"
-echo -e " │ DOMAIN : ${MAGENTA}$domain${WHITE}"
+echo -e "${WHITE_BOLD} ┌────────────────────────────────────────────┐${NC}"
+echo -e "${WHITE_BOLD} │ SYS OS : ${MAGENTA}$os_name${WHITE_BOLD}"
+echo -e " │ RAM    : ${MAGENTA}${ram_used}MB / ${ram_total}MB${WHITE_BOLD}"
+echo -e " │ UPTIME : ${MAGENTA}$uptime_sys${WHITE_BOLD}"
+echo -e " │ CORE   : ${MAGENTA}$core${WHITE_BOLD}"
+echo -e " │ ISP    : ${MAGENTA}$isp${WHITE_BOLD}"
+echo -e " │ CITY   : ${MAGENTA}$city${WHITE_BOLD}"
+echo -e " │ IP     : ${MAGENTA}$ip_vps${WHITE_BOLD}"
+echo -e " │ DOMAIN : ${MAGENTA}$domain${WHITE_BOLD}"
 echo -e " └────────────────────────────────────────────┘${NC}"
-echo -e "${WHITE} ┌────────────────────────────────────────────────┐${NC}"
+echo -e "${WHITE_BOLD} ┌────────────────────────────────────────────────┐${NC}"
 echo -e " │ SSH-WS : $status_ssh │ XRAY : $status_xray │ NGINX : $status_nginx │  ${GREEN}GOOD${NC} │"
 echo -e " └────────────────────────────────────────────────┘"
 echo -e "                 SSH OVPN : ${MAGENTA}$ssh_count${NC}"
@@ -53,10 +53,10 @@ echo -e "                 VMESS    : ${MAGENTA}$vmess_count${NC}"
 echo -e "                 VLESS    : ${MAGENTA}$vless_count${NC}"
 echo -e "                 TROJAN   : ${MAGENTA}$trojan_count${NC}"
 echo -e "${CYAN} ┌────────────────────────────────────────────────┐${NC}"
-echo -e " │ ${MAGENTA}1.${WHITE} SSH MANAGER         ${MAGENTA}5.${WHITE} OTHER SETTINGS        │"
-echo -e " │ ${MAGENTA}2.${WHITE} VMESS MANAGER       ${MAGENTA}6.${WHITE} REBOOT VPS            │"
-echo -e " │ ${MAGENTA}3.${WHITE} VLESS MANAGER       ${MAGENTA}x.${WHITE} EXIT                  │"
-echo -e " │ ${MAGENTA}4.${WHITE} TROJAN MANAGER                               │"
+echo -e " │ ${MAGENTA}1.${WHITE_BOLD} SSH MANAGER         ${MAGENTA}5.${WHITE_BOLD} OTHER SETTINGS        │"
+echo -e " │ ${MAGENTA}2.${WHITE_BOLD} VMESS MANAGER       ${MAGENTA}6.${WHITE_BOLD} REBOOT VPS            │"
+echo -e " │ ${MAGENTA}3.${WHITE_BOLD} VLESS MANAGER       ${MAGENTA}x.${WHITE_BOLD} EXIT                  │"
+echo -e " │ ${MAGENTA}4.${WHITE_BOLD} TROJAN MANAGER                               │"
 echo -e "${CYAN} └────────────────────────────────────────────────┘${NC}"
 read -p "$(echo -e ${MAGENTA}Select Menu:${NC} )" opt
 case $opt in
@@ -69,4 +69,3 @@ case $opt in
   x) exit ;;
   *) bash /root/menu/menu.sh ;;
 esac
-
