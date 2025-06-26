@@ -1,5 +1,5 @@
 #!/bin/bash
-# AUTO INSTALL VPN FULL PACKAGE + IP REGISTRATION + XRAY CONFIG + MENU + BOT
+# AUTO INSTALL VPN FULL PACKAGE + IP REGISTRATION + XRAY CONFIG + MENU
 # Brand: NIKU TUNNEL / MERCURYVPN
 
 # Warna log
@@ -41,7 +41,7 @@ echo "$DOMAIN" > /etc/xray/domain
 # Update system & install basic tools
 log_info "Update & install tools dasar..."
 apt update -y && apt upgrade -y
-apt install -y socat curl wget screen unzip netfilter-persistent cron bash-completion lsb-release python3 python3-pip nginx jq git
+apt install -y socat curl wget screen unzip netfilter-persistent cron bash-completion lsb-release python3 python3-pip nginx jq git dropbear squid haproxy unzip
 
 # Buat rc.local
 cat > /etc/rc.local <<-END
@@ -64,21 +64,43 @@ Restart=always
 [Install]
 WantedBy=multi-user.target
 EOF
+systemctl daemon-reload
 systemctl enable badvpn
 systemctl start badvpn
 
-# Install SSL Let's Encrypt via ACME
-log_info "Memasang SSL Let's Encrypt via ACME..."
-curl https://acme-install.netlify.app/acme.sh | sh
-~/.acme.sh/acme.sh --issue -d $DOMAIN --standalone -k ec-256
+# Install UDP Custom
+log_info "Install UDP Custom..."
+wget -q -O /usr/bin/udp-custom "https://github.com/aztecmx/udp-custom/releases/latest/download/udp-custom-linux-amd64"
+chmod +x /usr/bin/udp-custom
+cat > /etc/systemd/system/udp-custom.service <<EOF
+[Unit]
+Description=UDP Custom Service
+After=network.target
+[Service]
+ExecStart=/usr/bin/udp-custom server --listen 7300 --to 127.0.0.1:22
+Restart=always
+[Install]
+WantedBy=multi-user.target
+EOF
+systemctl daemon-reload
+systemctl enable udp-custom
+systemctl start udp-custom
 
-CERT_PATH="/root/.acme.sh/$DOMAIN_ecc/fullchain.cer"
-KEY_PATH="/root/.acme.sh/$DOMAIN_ecc/$DOMAIN.key"
+# Install ACME.sh dan buat SSL
+log_info "Install dan generate SSL Let's Encrypt..."
+curl https://get.acme.sh | sh
+source ~/.bashrc
+/root/.acme.sh/acme.sh --issue -d "$DOMAIN" --standalone -k ec-256
+/root/.acme.sh/acme.sh --install-cert -d "$DOMAIN" \
+  --fullchain-file /etc/xray/cert.pem \
+  --key-file /etc/xray/key.pem \
+  --ecc
 
-cp "$CERT_PATH" /etc/xray/cert.pem
-cp "$KEY_PATH" /etc/xray/key.pem
+# Gabungkan cert dan key untuk HAProxy
+cat /etc/xray/cert.pem /etc/xray/key.pem > /etc/xray/haproxy.pem
+chmod 600 /etc/xray/haproxy.pem
 
-# Install Xray
+# Install Xray Core
 log_info "Mengunduh dan menginstall Xray Core..."
 mkdir -p /etc/xray /var/log/xray
 mkdir -p /tmp/xray && cd /tmp/xray
@@ -93,7 +115,7 @@ UUID=$(cat /proc/sys/kernel/random/uuid)
 echo "$UUID" > /etc/xray/uuid
 log_success "✅ Xray Core berhasil dipasang!"
 
-# Dummy config minimal
+# Buat config Xray lengkap
 cat > /etc/xray/config.json <<EOF
 {
   "log": {
@@ -101,7 +123,54 @@ cat > /etc/xray/config.json <<EOF
     "error": "/var/log/xray/error.log",
     "loglevel": "info"
   },
-  "inbounds": [],
+  "inbounds": [
+    {
+      "port": 8880,
+      "protocol": "vmess",
+      "settings": {
+        "clients": [
+          { "id": "$UUID", "alterId": 0 }
+        ]
+      },
+      "streamSettings": {
+        "network": "ws",
+        "wsSettings": {
+          "path": "/vmess"
+        }
+      }
+    },
+    {
+      "port": 8881,
+      "protocol": "vless",
+      "settings": {
+        "clients": [
+          { "id": "$UUID", "flow": "xtls-rprx-vision" }
+        ],
+        "decryption": "none"
+      },
+      "streamSettings": {
+        "network": "ws",
+        "wsSettings": {
+          "path": "/vless"
+        }
+      }
+    },
+    {
+      "port": 8882,
+      "protocol": "trojan",
+      "settings": {
+        "clients": [
+          { "password": "$UUID" }
+        ]
+      },
+      "streamSettings": {
+        "network": "ws",
+        "wsSettings": {
+          "path": "/trojan"
+        }
+      }
+    }
+  ],
   "outbounds": [
     {
       "protocol": "freedom",
@@ -111,6 +180,7 @@ cat > /etc/xray/config.json <<EOF
 }
 EOF
 
+# Buat systemd service untuk Xray
 cat > /etc/systemd/system/xray.service <<EOF
 [Unit]
 Description=Xray Service
@@ -122,34 +192,16 @@ Restart=on-failure
 [Install]
 WantedBy=multi-user.target
 EOF
-systemctl daemon-reexec
+
+systemctl daemon-reload
 systemctl enable xray
 systemctl restart xray
 
-# Install Dropbear & UDP Custom
-log_info "Install Dropbear & UDP Custom..."
-apt install -y dropbear
+# Restart Dropbear
 systemctl enable dropbear
 systemctl restart dropbear
 
-wget -q -O /usr/bin/udp-custom "https://github.com/aztecmx/udp-custom/releases/latest/download/udp-custom-linux-amd64"
-chmod +x /usr/bin/udp-custom
-cat > /etc/systemd/system/udp-custom.service <<EOF
-[Unit]
-Description=UDP Custom Service
-After=network.target
-[Service]
-ExecStart=/usr/bin/udp-custom server --listen 7300 --to 127.0.0.1:22
-Restart=always
-[Install]
-WantedBy=multi-user.target
-EOF
-systemctl enable udp-custom
-systemctl start udp-custom
-
-# Install Squid & HAProxy
-log_info "Install Squid & HAProxy..."
-apt install -y squid haproxy
+# Konfigurasi Squid proxy
 cat > /etc/squid/squid.conf <<EOF
 http_port 3128
 http_port 8080
@@ -159,6 +211,7 @@ EOF
 systemctl enable squid
 systemctl restart squid
 
+# Konfigurasi HAProxy
 cat > /etc/haproxy/haproxy.cfg <<EOF
 global
     daemon
@@ -171,7 +224,7 @@ defaults
     timeout server 50000ms
 
 frontend ssl_ssh
-    bind *:443 ssl crt /etc/xray/cert.pem key /etc/xray/key.pem
+    bind *:443 ssl crt /etc/xray/haproxy.pem
     mode tcp
     default_backend ssh_backend
 
@@ -179,11 +232,12 @@ backend ssh_backend
     mode tcp
     server ssh 127.0.0.1:22
 EOF
+
+systemctl daemon-reload
 systemctl enable haproxy
 systemctl restart haproxy
 
-# Setup NGINX lengkap
-log_info "Mengatur konfigurasi NGINX untuk WS + TLS + Payload Support..."
+# Setup NGINX
 rm -f /etc/nginx/sites-enabled/default
 rm -f /etc/nginx/sites-available/default
 rm -f /etc/nginx/conf.d/vpn.conf
@@ -277,7 +331,7 @@ EOF
 
 nginx -t && systemctl restart nginx && log_success "NGINX berhasil dikonfigurasi untuk WS dan TLS"
 
-# Install menu CLI
+# Pasang menu CLI
 log_info "Pasang menu CLI..."
 mkdir -p /root/menu
 cd /root/menu
@@ -288,24 +342,6 @@ chmod +x /root/menu/menu.sh
 if ! grep -q "menu.sh" /root/.bashrc; then
   echo "clear && bash /root/menu/menu.sh" >> /root/.bashrc
 fi
-
-# Setup Telegram Bot (placeholder)
-log_info "Setup Telegram Bot registrasi IP..."
-mkdir -p /etc/niku-bot
-cat > /etc/systemd/system/niku-bot.service <<EOF
-[Unit]
-Description=NIKU Tunnel Telegram Bot
-After=network.target
-[Service]
-WorkingDirectory=/etc/niku-bot
-ExecStart=/usr/bin/python3 /etc/niku-bot/bot.py
-Restart=always
-[Install]
-WantedBy=multi-user.target
-EOF
-systemctl daemon-reexec
-systemctl enable niku-bot
-systemctl start niku-bot
 
 log_success "Instalasi selesai!"
 read -p "Reboot VPS sekarang? (y/n): " reboot_confirm
