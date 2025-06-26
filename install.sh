@@ -93,16 +93,18 @@ systemctl daemon-reload
 systemctl enable udp-custom
 systemctl start udp-custom
 
+# ===============================================
+# AUTO INSTALL SSL - LET'S ENCRYPT (ACME.SH)
+# ===============================================
 log_info "Menghentikan nginx sementara untuk generate SSL..."
+systemctl stop nginx
+
 log_info "Install ACME.sh untuk SSL Let's Encrypt..."
 curl https://get.acme.sh | sh
 source ~/.bashrc
 
-log_info "Hentikan nginx sementara supaya port 80 bisa dipakai SSL..."
-systemctl stop nginx
-
 log_info "Generate SSL cert untuk domain $DOMAIN..."
-/root/.acme.sh/acme.sh --issue -d "$DOMAIN" --standalone -k ec-256
+/root/.acme.sh/acme.sh --issue -d "$DOMAIN" --standalone -k ec-256 --server letsencrypt
 
 log_info "Pasang sertifikat SSL ke folder Xray..."
 /root/.acme.sh/acme.sh --install-cert -d "$DOMAIN" \
@@ -110,7 +112,19 @@ log_info "Pasang sertifikat SSL ke folder Xray..."
   --key-file /etc/xray/key.pem \
   --ecc
 
-log_info "Nyalakan kembali nginx..."
+# Cek apakah berhasil
+if [[ -f /etc/xray/cert.pem && -f /etc/xray/key.pem ]]; then
+  log_success "✅ Sertifikat SSL berhasil dibuat!"
+else
+  log_error "❌ Gagal membuat SSL. Pastikan domain mengarah ke IP VPS!"
+  exit 1
+fi
+
+# Gabungkan cert + key untuk HAProxy
+cat /etc/xray/cert.pem /etc/xray/key.pem > /etc/xray/haproxy.pem
+chmod 600 /etc/xray/haproxy.pem
+
+log_info "Menyalakan kembali NGINX..."
 systemctl start nginx
 
 cat /etc/xray/cert.pem /etc/xray/key.pem > /etc/xray/haproxy.pem
