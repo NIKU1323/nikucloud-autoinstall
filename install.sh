@@ -1,35 +1,45 @@
 #!/bin/bash
-# COMPLETE VPN INSTALLATION SCRIPT WITH ALL FIXES
-# Fixed: Xray download, menu installation, and error handling
-# Includes: Xray (VMESS/VLESS/Trojan), SSH, Nginx, HAProxy, and Complete Menu System
+# COMPLETE VPN INSTALLATION SCRIPT WITH IP VALIDATION
+# Includes: Xray (VMESS/VLESS/Trojan), Nginx, HAProxy, Menu System
+# Fixed: IP validation, Xray download, menu installation
 
 # Colors
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[0;33m'
+CYAN='\033[0;36m'
 NC='\033[0m'
 
 # Check root
 if [[ $EUID -ne 0 ]]; then
-    echo -e "${RED}ERROR: This script must be run as root${NC}"
+    echo -e "${RED}ERROR: Script must be run as root${NC}"
     exit 1
 fi
 
-# Function to handle errors
+# Error handling
 handle_error() {
     echo -e "${RED}Error occurred on line $1${NC}"
-    echo -e "${YELLOW}Checking system status...${NC}"
+    echo -e "${YELLOW}Checking services...${NC}"
     systemctl status xray nginx haproxy 2>/dev/null
     exit 1
 }
 
 trap 'handle_error $LINENO' ERR
 
-# Cleanup previous installation
-cleanup() {
-    echo -e "${YELLOW}Cleaning up previous installation...${NC}"
-    systemctl stop xray nginx haproxy 2>/dev/null
-    rm -rf /tmp/xray /usr/bin/xray /etc/xray /root/menu
+# IP Validation Function
+validate_ip() {
+    IPVPS=$(curl -s ipv4.icanhazip.com)
+    ALLOWED_URL="http://172.236.138.192/data/allowed.json"
+    
+    echo -e "${YELLOW}Validating VPS IP ($IPVPS)...${NC}"
+    EXPIRED=$(curl -s --max-time 10 "$ALLOWED_URL" | jq -r '.[] | select(.ip=="'$IPVPS'") | .exp')
+    
+    if [[ -z "$EXPIRED" ]]; then
+        echo -e "${RED}IP VPS ($IPVPS) not registered. Contact admin.${NC}"
+        exit 1
+    else
+        echo -e "${GREEN}IP validated. Expiration: $EXPIRED${NC}"
+    fi
 }
 
 # Install dependencies
@@ -50,10 +60,10 @@ install_xray() {
 
     # Download with retry
     for i in {1..3}; do
-        wget --timeout=30 --tries=3 -O xray.zip "$XRAY_URL" && break || {
+        wget --timeout=30 -O xray.zip "$XRAY_URL" && break || {
             echo -e "${YELLOW}Attempt $i failed, retrying...${NC}"
             sleep 3
-            [ $i -eq 3 ] && { echo -e "${RED}Failed to download Xray after 3 attempts${NC}"; exit 1; }
+            [ $i -eq 3 ] && { echo -e "${RED}Failed to download Xray${NC}"; exit 1; }
         }
     done
 
@@ -119,9 +129,11 @@ configure_xray() {
 EOF
 }
 
-# Create Xray service
-create_xray_service() {
-    echo -e "${YELLOW}[5/9] Creating Xray service...${NC}"
+# Create services
+create_services() {
+    echo -e "${YELLOW}[5/9] Creating services...${NC}"
+    
+    # Xray service
     cat > /etc/systemd/system/xray.service <<EOF
 [Unit]
 Description=Xray Service
@@ -136,11 +148,8 @@ User=root
 [Install]
 WantedBy=multi-user.target
 EOF
-}
 
-# Configure HAProxy
-configure_haproxy() {
-    echo -e "${YELLOW}[6/9] Configuring HAProxy...${NC}"
+    # HAProxy config
     cat > /etc/haproxy/haproxy.cfg <<EOF
 global
     daemon
@@ -173,12 +182,12 @@ backend ssh_tls
 EOF
 }
 
-# Install complete menu system
+# Install menu system
 install_menu() {
-    echo -e "${YELLOW}[7/9] Installing complete menu system...${NC}"
+    echo -e "${YELLOW}[6/9] Installing menu system...${NC}"
     mkdir -p /root/menu && cd /root/menu
 
-    # Main menu scripts
+    # Main menu
     wget --timeout=30 -q https://raw.githubusercontent.com/NIKU1323/nikucloud-autoinstall/main/menu/menu.sh
     wget --timeout=30 -q https://raw.githubusercontent.com/NIKU1323/nikucloud-autoinstall/main/menu/menu-ssh.sh
     wget --timeout=30 -q https://raw.githubusercontent.com/NIKU1323/nikucloud-autoinstall/main/menu/menu-vmess.sh
@@ -210,38 +219,56 @@ install_menu() {
     wget --timeout=30 -q -O /root/menu/vmess/delete-exp.sh https://raw.githubusercontent.com/NIKU1323/nikucloud-autoinstall/main/menu/vmess/delete-exp.sh
     wget --timeout=30 -q -O /root/menu/vmess/delete.sh https://raw.githubusercontent.com/NIKU1323/nikucloud-autoinstall/main/menu/vmess/delete.sh
 
-    # VLESS submenu
     mkdir -p /root/menu/vless
-    wget --timeout=30 -q -O /root/menu/vless/create.sh https://raw.githubusercontent.com/NIKU1323/nikucloud-autoinstall/main/menu/vless/create.sh
-    wget --timeout=30 -q -O /root/menu/vless/autokill.sh https://raw.githubusercontent.com/NIKU1323/nikucloud-autoinstall/main/menu/vless/renew.sh
-    wget --timeout=30 -q -O /root/menu/vless/cek.sh https://raw.githubusercontent.com/NIKU1323/nikucloud-autoinstall/main/menu/vless/cek.sh
-    wget --timeout=30 -q -O /root/menu/vless/lock.sh https://raw.githubusercontent.com/NIKU1323/nikucloud-autoinstall/main/menu/vless/trial.sh
-    wget --timeout=30 -q -O /root/menu/vless/list.sh https://raw.githubusercontent.com/NIKU1323/nikucloud-autoinstall/main/menu/vless/list.sh
-    wget --timeout=30 -q -O /root/menu/vless/delete-exp.sh https://raw.githubusercontent.com/NIKU1323/nikucloud-autoinstall/main/menu/vless/delete-exp.sh
-    wget --timeout=30 -q -O /root/menu/vless/delete.sh https://raw.githubusercontent.com/NIKU1323/nikucloud-autoinstall/main/menu/vless/delete.sh
+    wget -q -O /root/menu/vless/create.sh https://raw.githubusercontent.com/NIKU1323/nikucloud-autoinstall/main/menu/vless/create.sh
+    wget -q -O /root/menu/vless/autokill.sh https://raw.githubusercontent.com/NIKU1323/nikucloud-autoinstall/main/menu/vless/renew.sh
+    wget -q -O /root/menu/vless/cek.sh https://raw.githubusercontent.com/NIKU1323/nikucloud-autoinstall/main/menu/vless/cek.sh
+    wget -q -O /root/menu/vless/lock.sh https://raw.githubusercontent.com/NIKU1323/nikucloud-autoinstall/main/menu/vless/trial.sh
+    wget -q -O /root/menu/vless/list.sh https://raw.githubusercontent.com/NIKU1323/nikucloud-autoinstall/main/menu/vless/list.sh
+    wget -q -O /root/menu/vless/delete-exp.sh https://raw.githubusercontent.com/NIKU1323/nikucloud-autoinstall/main/menu/vless/delete-exp.sh
+    wget -q -O /root/menu/vless/delete.sh https://raw.githubusercontent.com/NIKU1323/nikucloud-autoinstall/main/menu/vless/delete.sh
 
-    # Trojan submenu
     mkdir -p /root/menu/trojan
-    wget --timeout=30 -q -O /root/menu/trojan/create.sh https://raw.githubusercontent.com/NIKU1323/nikucloud-autoinstall/main/menu/trojan/create.sh
-    wget --timeout=30 -q -O /root/menu/trojan/autokill.sh https://raw.githubusercontent.com/NIKU1323/nikucloud-autoinstall/main/menu/trojan/renew.sh
-    wget --timeout=30 -q -O /root/menu/trojan/cek.sh https://raw.githubusercontent.com/NIKU1323/nikucloud-autoinstall/main/menu/trojan/cek.sh
-    wget --timeout=30 -q -O /root/menu/trojan/lock.sh https://raw.githubusercontent.com/NIKU1323/nikucloud-autoinstall/main/menu/trojan/trial.sh
-    wget --timeout=30 -q -O /root/menu/trojan/list.sh https://raw.githubusercontent.com/NIKU1323/nikucloud-autoinstall/main/menu/trojan/list.sh
-    wget --timeout=30 -q -O /root/menu/trojan/delete-exp.sh https://raw.githubusercontent.com/NIKU1323/nikucloud-autoinstall/main/menu/trojan/delete-exp.sh
-    wget --timeout=30 -q -O /root/menu/trojan/delete.sh https://raw.githubusercontent.com/NIKU1323/nikucloud-autoinstall/main/menu/trojan/delete.sh
+    wget -q -O /root/menu/trojan/create.sh https://raw.githubusercontent.com/NIKU1323/nikucloud-autoinstall/main/menu/trojan/create.sh
+    wget -q -O /root/menu/trojan/autokill.sh https://raw.githubusercontent.com/NIKU1323/nikucloud-autoinstall/main/menu/trojan/renew.sh
+    wget -q -O /root/menu/trojan/cek.sh https://raw.githubusercontent.com/NIKU1323/nikucloud-autoinstall/main/menu/trojan/cek.sh
+    wget -q -O /root/menu/trojan/lock.sh https://raw.githubusercontent.com/NIKU1323/nikucloud-autoinstall/main/menu/trojan/trial.sh
+    wget -q -O /root/menu/trojan/list.sh https://raw.githubusercontent.com/NIKU1323/nikucloud-autoinstall/main/menu/trojan/list.sh
+    wget -q -O /root/menu/trojan/delete-exp.sh https://raw.githubusercontent.com/NIKU1323/nikucloud-autoinstall/main/menu/trojan/delete-exp.sh
+    wget -q -O /root/menu/trojan/delete.sh https://raw.githubusercontent.com/NIKU1323/nikucloud-autoinstall/main/menu/trojan/delete.sh
 
     # Set permissions
     chmod +x /root/menu/*.sh
     chmod +x /root/menu/menu-tools/*.sh
     chmod +x /root/menu/ssh/*.sh
-    chmod +x /root/menu/vless/*.sh
-    chmod +x /root/menu/trojan/*.sh
     chmod +x /root/menu/vmess/*.sh
 }
 
-# Final configuration
+# Setup SSL
+setup_ssl() {
+    echo -e "${YELLOW}[7/9] Setting up SSL...${NC}"
+    mkdir -p /etc/xray
+    if [ ! -f "/etc/xray/cert.pem" ] || [ ! -f "/etc/xray/key.pem" ]; then
+        echo -e "${YELLOW}Generating temporary SSL certificate...${NC}"
+        openssl req -new -newkey rsa:2048 -days 365 -nodes -x509 \
+            -subj "/CN=temp-certificate" \
+            -keyout /etc/xray/key.pem -out /etc/xray/cert.pem
+    fi
+    cat /etc/xray/cert.pem /etc/xray/key.pem > /etc/xray/haproxy.pem
+    chmod 600 /etc/xray/haproxy.pem
+}
+
+# Enable services
+enable_services() {
+    echo -e "${YELLOW}[8/9] Enabling services...${NC}"
+    systemctl daemon-reload
+    systemctl enable xray nginx haproxy
+    systemctl restart xray nginx haproxy
+}
+
+# Final setup
 final_setup() {
-    echo -e "${YELLOW}[8/9] Finalizing installation...${NC}"
+    echo -e "${YELLOW}[9/9] Finalizing setup...${NC}"
     # Create symlink
     ln -sf /root/menu/menu.sh /usr/local/bin/menu
     chmod +x /usr/local/bin/menu
@@ -251,24 +278,24 @@ final_setup() {
         echo "clear && /root/menu/menu.sh" >> /root/.bashrc
     fi
 
-    # Enable services
-    systemctl daemon-reload
-    systemctl enable xray nginx haproxy
-    systemctl restart xray nginx haproxy
+    # Verify installation
+    echo -e "\n${GREEN}Verifying installation...${NC}"
+    systemctl status xray nginx haproxy --no-pager --lines=3
 }
 
-# Main installation flow
-cleanup
+# Main installation
+validate_ip
 install_deps
 install_xray
 install_geo
 configure_xray
-create_xray_service
-configure_haproxy
+create_services
+setup_ssl
 install_menu
+enable_services
 final_setup
 
 # Completion message
-echo -e "${GREEN}Installation completed successfully!${NC}"
-echo -e "You can now access the menu by typing: ${YELLOW}menu${NC}"
-echo -e "Or by reconnecting to your server"
+echo -e "${GREEN}\nInstallation completed successfully!${NC}"
+echo -e "Access the menu with: ${YELLOW}menu${NC}"
+echo -e "Check Xray version: ${YELLOW}xray --version | head -n 1${NC}"
