@@ -26,7 +26,8 @@ IPVPS=$(curl -s ipv4.icanhazip.com)
 ALLOWED_URL="http://127.0.0.1/data/allowed.json" # GANTI URL SESUAI SERVERMU
 
 log_info "Memvalidasi IP VPS ($IPVPS)..."
-if curl -s --max-time 10 "$ALLOWED_URL" | grep -qw "$IPVPS"; then
+EXPIRED=$(curl -s --max-time 10 "$ALLOWED_URL" | jq -r '.[] | select(.ip=="'"$IPVPS"'") | .exp')
+if [[ -n "$EXPIRED" ]]; then
     log_success "IP VPS terdaftar. Lanjutkan instalasi..."
 else
     log_error "IP VPS ($IPVPS) belum terdaftar. Hubungi admin Telegram."
