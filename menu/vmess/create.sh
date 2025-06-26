@@ -22,9 +22,11 @@ read -p "Limit Kuota (GB)   : " quota_limit
 
 uuid=$(cat /proc/sys/kernel/random/uuid)
 exp_date=$(date -d "$days days" +%Y-%m-%d)
+created_at=$(date +%Y-%m-%d)
 domain=$(cat /etc/xray/domain)
 tls_port="443"
 none_port="80"
+duration="$days"
 
 # Buat file JSON VMESS config
 cat >> /etc/xray/config.json <<EOF
@@ -81,18 +83,56 @@ EOF
 )
 link_nontls="vmess://$(echo $vmess_json_nontls | base64 -w0)"
 
+# Buat VMESS GRPC Link
+vmess_json_grpc=$(cat <<EOF
+{
+  "v": "2",
+  "ps": "$username-grpc",
+  "add": "$domain",
+  "port": "$tls_port",
+  "id": "$uuid",
+  "aid": "0",
+  "net": "grpc",
+  "type": "none",
+  "host": "$domain",
+  "path": "vmess-grpc",
+  "tls": "tls"
+}
+EOF
+)
+link_grpc="vmess://$(echo $vmess_json_grpc | base64 -w0)"
+
+# Buat OpenClash Format
+link_clash=$(echo $vmess_json | base64 -w0)
+
 # OUTPUT
 clear
-echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-echo -e "      ${GREEN}NIKU TUNNEL / MERCURYVPN - VMESS ACCOUNT${NC}"
-echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-echo -e "${GREEN}Username       : ${YELLOW}$username${NC}"
-echo -e "${GREEN}Expired        : ${YELLOW}$exp_date${NC}"
-echo -e "${GREEN}Domain         : ${YELLOW}$domain${NC}"
-echo -e "${GREEN}UUID           : ${YELLOW}$uuid${NC}"
-echo -e "${GREEN}Limit IP       : ${YELLOW}$ip_limit${NC}"
-echo -e "${GREEN}Limit Kuota    : ${YELLOW}$quota_limit GB${NC}"
-echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-echo -e "${GREEN}VMESS TLS      : ${NC}$link_tls"
-echo -e "${GREEN}VMESS None TLS : ${NC}$link_nontls"
-echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+echo -e "━━━━━━━━━━━━━━━━━◇"
+echo -e " Xray/Vmess Account"
+echo -e "◇━━━━━━━━━━━━━━━━━◇"
+echo -e "Remarks          : ${YELLOW}$username${NC}"
+echo -e "Domain           : ${YELLOW}$domain${NC}"
+echo -e "User Quota       : ${YELLOW}$quota_limit GB${NC}"
+echo -e "User Ip          : ${YELLOW}$ip_limit${NC}"
+echo -e "Port TLS         : ${YELLOW}$tls_port${NC}"
+echo -e "Port none TLS    : ${YELLOW}$none_port${NC}"
+echo -e "id               : ${YELLOW}$uuid${NC}"
+echo -e "alterId          : ${YELLOW}0${NC}"
+echo -e "Security         : ${YELLOW}auto${NC}"
+echo -e "Network          : ${YELLOW}ws${NC}"
+echo -e "Path             : ${YELLOW}/vmess${NC}"
+echo -e "Dynamic          : ${YELLOW}false${NC}"
+echo -e "ServiceName      : ${YELLOW}-${NC}"
+echo -e "◇━━━━━━━━━━━━━━━━━◇"
+echo -e "Link TLS         : ${NC}$link_tls"
+echo -e "◇━━━━━━━━━━━━━━━━━◇"
+echo -e "Link none TLS    : ${NC}$link_nontls"
+echo -e "◇━━━━━━━━━━━━━━━━━◇"
+echo -e "Link GRPC        : ${NC}$link_grpc"
+echo -e "◇━━━━━━━━━━━━━━━━━◇"
+echo -e "Format OpenClash : ${NC}$link_clash"
+echo -e "◇━━━━━━━━━━━━━━━━━◇"
+echo -e "Aktif Selama     : ${YELLOW}$duration days${NC}"
+echo -e "Dibuat Pada      : ${YELLOW}$created_at${NC}"
+echo -e "Berakhir Pada    : ${YELLOW}$exp_date${NC}"
+echo -e "◇━━━━━━━━━━━━━━━━━◇"
