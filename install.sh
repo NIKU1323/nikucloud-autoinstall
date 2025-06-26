@@ -23,6 +23,10 @@ fi
 apt update -y
 apt install -y jq curl
 
+# Update sistem dan install dependency penting dulu
+apt update -y
+apt install -y jq curl socat openssl wget unzip
+
 # Validasi IP VPS dari allowed.json
 IPVPS=$(curl -s ipv4.icanhazip.com)
 ALLOWED_URL="http://172.236.138.192/data/allowed.json"
