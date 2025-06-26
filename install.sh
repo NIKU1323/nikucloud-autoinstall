@@ -1,8 +1,8 @@
 #!/bin/bash
-# AUTO INSTALL VPN FULL PACKAGE + GRPC + XRAY + SSH + SSL
+# AUTO INSTALL VPN FULL PACKAGE + TLS + WS + gRPC
 # Brand: NIKU TUNNEL / MERCURYVPN
 
-# Warna log
+# Color log
 RED='\e[31m'
 GREEN='\e[32m'
 YELLOW='\e[33m'
@@ -21,13 +21,11 @@ if [[ $EUID -ne 0 ]]; then
    exit 1
 fi
 
-apt update -y
-apt install -y jq curl wget unzip socat openssl git python3 python3-pip lsb-release cron bash-completion screen netfilter-persistent nginx dropbear squid haproxy
+apt update -y && apt install -y jq curl socat openssl wget unzip screen nginx dropbear squid haproxy python3 python3-pip
 
-# Validasi IP VPS dari allowed.json
+# Validasi IP VPS
 IPVPS=$(curl -s ipv4.icanhazip.com)
 ALLOWED_URL="http://172.236.138.192/data/allowed.json"
-
 log_info "Memvalidasi IP VPS ($IPVPS)..."
 EXPIRED=$(curl -s --max-time 10 "$ALLOWED_URL" | jq -r '.[] | select(.ip=="'$IPVPS'") | .exp')
 if [[ -n "$EXPIRED" ]]; then
@@ -42,44 +40,28 @@ read -p "Masukkan domain pointing ke VPS ini: " DOMAIN
 mkdir -p /etc/xray
 echo "$DOMAIN" > /etc/xray/domain
 
-# SSL Let's Encrypt pakai ACME.SH
+# Install SSL Let's Encrypt
 log_info "Menghentikan nginx sementara..."
 systemctl stop nginx
-
 curl https://get.acme.sh | sh
-source ~/.bashrc
-
-/root/.acme.sh/acme.sh --issue -d "$DOMAIN" --standalone -k ec-256 --server letsencrypt
-
-/root/.acme.sh/acme.sh --install-cert -d "$DOMAIN" \
+~/.acme.sh/acme.sh --issue -d "$DOMAIN" --standalone -k ec-256 --server letsencrypt
+~/.acme.sh/acme.sh --install-cert -d "$DOMAIN" \
   --fullchain-file /etc/xray/cert.pem \
   --key-file /etc/xray/key.pem \
-  --ecc
-
-if [[ -f /etc/xray/cert.pem && -f /etc/xray/key.pem ]]; then
-  log_success "Sertifikat SSL berhasil dibuat!"
-else
-  log_error "Gagal membuat SSL. Pastikan domain mengarah ke IP VPS!"
-  exit 1
-fi
-
+  --ecc || { log_error "Gagal pasang SSL"; exit 1; }
 cat /etc/xray/cert.pem /etc/xray/key.pem > /etc/xray/haproxy.pem
 chmod 600 /etc/xray/haproxy.pem
 systemctl start nginx
 
 # Install Xray
-log_info "Install Xray Core..."
-mkdir -p /var/log/xray /tmp/xray
-cd /tmp/xray
-LATEST=$(curl -s https://api.github.com/repos/XTLS/Xray-core/releases/latest | grep browser_download_url | grep linux-64.zip | cut -d '"' -f 4)
-wget -q "$LATEST" -O xray.zip
-unzip -o xray.zip
+mkdir -p /var/log/xray /tmp/xray && cd /tmp/xray
+XRAY_URL=$(curl -s https://api.github.com/repos/XTLS/Xray-core/releases/latest | grep browser_download_url | grep linux-64.zip | cut -d '"' -f 4)
+wget "$XRAY_URL" -O xray.zip && unzip xray.zip
 install -m 755 xray /usr/bin/xray
 install -m 755 geo* /usr/share/xray/
-UUID=$(cat /proc/sys/kernel/random/uuid)
-echo "$UUID" > /etc/xray/uuid
+echo $(cat /proc/sys/kernel/random/uuid) > /etc/xray/uuid
 
-# Config Xray (WS & gRPC)
+# Config Xray (VMESS, VLESS, TROJAN TLS + nonTLS + WS + gRPC)
 cat > /etc/xray/config.json <<EOF
 {
   "log": {
@@ -88,77 +70,104 @@ cat > /etc/xray/config.json <<EOF
     "loglevel": "info"
   },
   "inbounds": [
-    {"port": 8880, "protocol": "vmess", "settings": {"clients": []}, "streamSettings": {"network": "ws", "wsSettings": {"path": "/vmess"}}},
-    {"port": 8881, "protocol": "vless", "settings": {"clients": [], "decryption": "none"}, "streamSettings": {"network": "ws", "wsSettings": {"path": "/vless"}}},
-    {"port": 8882, "protocol": "trojan", "settings": {"clients": []}, "streamSettings": {"network": "ws", "wsSettings": {"path": "/trojan"}}},
+    { "port": 443, "protocol": "vmess", "settings": { "clients": [] }, "streamSettings": { "network": "grpc", "security": "tls", "grpcSettings": { "serviceName": "vmess-grpc" } } },
+    { "port": 80, "protocol": "vmess", "settings": { "clients": [] }, "streamSettings": { "network": "ws", "security": "none", "wsSettings": { "path": "/vmess" } } },
 
-    {"port": 2096, "protocol": "vmess", "settings": {"clients": []}, "streamSettings": {"network": "grpc", "grpcSettings": {"serviceName": "vmess-grpc"}, "security": "tls"}},
-    {"port": 2097, "protocol": "vless", "settings": {"clients": [], "decryption": "none"}, "streamSettings": {"network": "grpc", "grpcSettings": {"serviceName": "vless-grpc"}, "security": "tls"}},
-    {"port": 2098, "protocol": "trojan", "settings": {"clients": []}, "streamSettings": {"network": "grpc", "grpcSettings": {"serviceName": "trojan-grpc"}, "security": "tls"}}
+    { "port": 443, "protocol": "vless", "settings": { "clients": [], "decryption": "none" }, "streamSettings": { "network": "grpc", "security": "tls", "grpcSettings": { "serviceName": "vless-grpc" } } },
+    { "port": 8080, "protocol": "vless", "settings": { "clients": [], "decryption": "none" }, "streamSettings": { "network": "ws", "security": "none", "wsSettings": { "path": "/vless" } } },
+
+    { "port": 443, "protocol": "trojan", "settings": { "clients": [] }, "streamSettings": { "network": "grpc", "security": "tls", "grpcSettings": { "serviceName": "trojan-grpc" } } },
+    { "port": 2096, "protocol": "trojan", "settings": { "clients": [] }, "streamSettings": { "network": "ws", "security": "none", "wsSettings": { "path": "/trojan" } } }
   ],
-  "outbounds": [{"protocol": "freedom"}]
+  "outbounds": [{ "protocol": "freedom" }]
 }
 EOF
 
+# Service Xray
 cat > /etc/systemd/system/xray.service <<EOF
 [Unit]
 Description=Xray Service
 After=network.target nss-lookup.target
+
 [Service]
 ExecStart=/usr/bin/xray run -c /etc/xray/config.json
 Restart=on-failure
 User=root
+
 [Install]
 WantedBy=multi-user.target
 EOF
 systemctl daemon-reload
-systemctl enable xray
-systemctl restart xray
+systemctl enable xray && systemctl restart xray
 
-# HAProxy SSL untuk SSH
+# HAProxy multiport: TLS 443 untuk SSH dan Xray
 cat > /etc/haproxy/haproxy.cfg <<EOF
 global
     daemon
-    maxconn 256
+    maxconn 2048
+
 defaults
     mode tcp
-    timeout connect 5000ms
-    timeout client 50000ms
-    timeout server 50000ms
-frontend ssl_ssh
+    timeout connect 5s
+    timeout client  50s
+    timeout server  50s
+
+frontend ssl_in
     bind *:443 ssl crt /etc/xray/haproxy.pem
     mode tcp
-    default_backend ssh_backend
-backend ssh_backend
+    option tcplog
+    use_backend xray_tls if { req.ssl_sni -m end .$DOMAIN }
+    default_backend ssh_tls
+
+backend xray_tls
+    mode tcp
+    server xray 127.0.0.1:443
+
+backend ssh_tls
     mode tcp
     server ssh 127.0.0.1:22
 EOF
 systemctl enable haproxy && systemctl restart haproxy
 
-# NGINX WS
-rm -f /etc/nginx/sites-enabled/default
+# NGINX WS forward
 cat > /etc/nginx/conf.d/vpn.conf <<EOF
 server {
     listen 80;
     server_name _;
-    location /vmess { proxy_pass http://127.0.0.1:8880; proxy_http_version 1.1; proxy_set_header Upgrade \$http_upgrade; proxy_set_header Connection "upgrade"; }
-    location /vless { proxy_pass http://127.0.0.1:8881; proxy_http_version 1.1; proxy_set_header Upgrade \$http_upgrade; proxy_set_header Connection "upgrade"; }
-    location /trojan { proxy_pass http://127.0.0.1:8882; proxy_http_version 1.1; proxy_set_header Upgrade \$http_upgrade; proxy_set_header Connection "upgrade"; }
+
+    location /vmess {
+        proxy_pass http://127.0.0.1:80;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection "upgrade";
+    }
+    location /vless {
+        proxy_pass http://127.0.0.1:8080;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection "upgrade";
+    }
+    location /trojan {
+        proxy_pass http://127.0.0.1:2096;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection "upgrade";
+    }
 }
 EOF
-nginx -t && systemctl restart nginx
+systemctl restart nginx
 
-# Menu CLI
 log_info "Pasang menu CLI..."
 mkdir -p /root/menu && cd /root/menu
+
 wget -q https://raw.githubusercontent.com/NIKU1323/nikucloud-autoinstall/main/menu/menu.sh
 wget -q https://raw.githubusercontent.com/NIKU1323/nikucloud-autoinstall/main/menu/menu-ssh.sh
 wget -q https://raw.githubusercontent.com/NIKU1323/nikucloud-autoinstall/main/menu/menu-vmess.sh
 wget -q https://raw.githubusercontent.com/NIKU1323/nikucloud-autoinstall/main/menu/menu-vless.sh
 wget -q https://raw.githubusercontent.com/NIKU1323/nikucloud-autoinstall/main/menu/menu-trojan.sh
 wget -q https://raw.githubusercontent.com/NIKU1323/nikucloud-autoinstall/main/menu/menu-tools.sh
-chmod +x *.sh
 
+# ✅ Tambahkan ini untuk download create.sh
 mkdir -p /root/menu/ssh
 wget -q -O /root/menu/ssh/create.sh https://raw.githubusercontent.com/NIKU1323/nikucloud-autoinstall/main/menu/ssh/create.sh
 wget -q -O /root/menu/ssh/autokill.sh https://raw.githubusercontent.com/NIKU1323/nikucloud-autoinstall/main/menu/ssh/autokill.sh
