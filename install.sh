@@ -23,7 +23,7 @@ fi
 
 # Validasi IP VPS dari allowed.json
 IPVPS=$(curl -s ipv4.icanhazip.com)
-ALLOWED_URL="http://127.0.0.1/data/allowed.json" # GANTI URL SESUAI SERVERMU
+ALLOWED_URL="http://172.236.138.192/data/allowed.json" # GANTI URL SESUAI SERVERMU
 
 log_info "Memvalidasi IP VPS ($IPVPS)..."
 EXPIRED=$(curl -s --max-time 10 "$ALLOWED_URL" | jq -r '.[] | select(.ip=="'"$IPVPS"'") | .exp')
