@@ -94,18 +94,23 @@ systemctl enable udp-custom
 systemctl start udp-custom
 
 log_info "Menghentikan nginx sementara untuk generate SSL..."
+log_info "Install ACME.sh untuk SSL Let's Encrypt..."
+curl https://get.acme.sh | sh
+source ~/.bashrc
+
+log_info "Hentikan nginx sementara supaya port 80 bisa dipakai SSL..."
 systemctl stop nginx
 
-# Install ACME & SSL
-log_info "Pasang SSL Let's Encrypt..."
-curl https://get.acme.sh | sh
-~/.acme.sh/acme.sh --issue -d "$DOMAIN" --standalone -k ec-256
-~/.acme.sh/acme.sh --install-cert -d "$DOMAIN" \
- --fullchain-file /etc/xray/cert.pem \
- --key-file /etc/xray/key.pem \
- --ecc
+log_info "Generate SSL cert untuk domain $DOMAIN..."
+/root/.acme.sh/acme.sh --issue -d "$DOMAIN" --standalone -k ec-256
 
-log_info "Menyalakan kembali nginx..."
+log_info "Pasang sertifikat SSL ke folder Xray..."
+/root/.acme.sh/acme.sh --install-cert -d "$DOMAIN" \
+  --fullchain-file /etc/xray/cert.pem \
+  --key-file /etc/xray/key.pem \
+  --ecc
+
+log_info "Nyalakan kembali nginx..."
 systemctl start nginx
 
 cat /etc/xray/cert.pem /etc/xray/key.pem > /etc/xray/haproxy.pem
