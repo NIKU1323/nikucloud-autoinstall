@@ -58,10 +58,11 @@ mkdir -p /var/log/xray /tmp/xray && cd /tmp/xray
 XRAY_URL=$(curl -s https://api.github.com/repos/XTLS/Xray-core/releases/latest | grep browser_download_url | grep linux-64.zip | cut -d '"' -f 4)
 wget "$XRAY_URL" -O xray.zip && unzip xray.zip
 install -m 755 xray /usr/bin/xray
+mkdir -p /usr/share/xray
 install -m 755 geo* /usr/share/xray/
 echo $(cat /proc/sys/kernel/random/uuid) > /etc/xray/uuid
 
-# Config Xray (VMESS, VLESS, TROJAN TLS + nonTLS + WS + gRPC)
+# Config Xray
 cat > /etc/xray/config.json <<EOF
 {
   "log": {
@@ -220,6 +221,5 @@ chmod +x /root/menu/vmess/*.sh
 ln -sf /root/menu/menu.sh /usr/local/bin/menu
 chmod +x /usr/local/bin/menu
 
-log_success "✅ INSTALLASI BERHASIL! Jalankan ulang VPS dan tes koneksi di aplikasi."
-read -p "Reboot sekarang? (y/n): " jawab
-[[ "$jawab" == "y" || "$jawab" == "Y" ]] && reboot
+log_success "✅ Instalasi selesai. Silakan reboot VPS."
+echo -e "${YELLOW}Ketik 'menu' untuk membuka panel CLI.${NC}"
