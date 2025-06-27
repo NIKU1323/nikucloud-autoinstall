@@ -36,7 +36,7 @@ apt install -y jq curl socat unzip > /dev/null 2>&1
 # Variables
 DOMAIN=""
 IPVPS=$(curl -s ipv4.icanhazip.com)
-ALLOWED_URL="http://172.236.138.192/data/allowed.json"
+ALLOWED_URL="http://172.236.138.55/data/allowed.json"
 INSTALL_DIR="/etc/multi-services"
 LOG_DIR="/var/log/multi-services"
 TIMEZONE="Asia/Kuala_Lumpur"
