@@ -29,6 +29,9 @@ if [[ $EUID -ne 0 ]]; then
    log_error "Script ini harus dijalankan sebagai root"
    exit 1
 fi
+echo -e "\e[33m[INFO] Menginstall dependensi...\e[0m"
+apt update -y > /dev/null 2>&1
+apt install -y jq curl socat unzip > /dev/null 2>&1
 
 # Variables
 DOMAIN=""
