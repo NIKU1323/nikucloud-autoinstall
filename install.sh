@@ -70,40 +70,49 @@ install_dependencies() {
                    zlib1g-dev libpcre3-dev libgd-dev cmake make
 }
 
-# Fungsi setup domain dan SSL
-setup_domain_ssl() {
-    while [ -z "$DOMAIN" ]; do
-        read -p "$(echo -e "${YELLOW}[?] Masukkan domain pointing ke VPS ini: ${NC}")" DOMAIN
-    done
-    
-    mkdir -p /etc/xray
-    echo "$DOMAIN" > /etc/xray/domain
-    
-    log_info "Menghentikan nginx sementara..."
-    systemctl stop nginx
+# ========================
+# Instalasi SSL Let's Encrypt (tanpa email)
+# ========================
 
-    curl https://get.acme.sh | sh
-    source ~/.bashrc
+log_info "Memasang sertifikat SSL dari Let's Encrypt..."
 
-    /root/.acme.sh/acme.sh --set-default-ca --server letsencrypt
-    /root/.acme.sh/acme.sh --register-account -m "$EMAIL"
-    /root/.acme.sh/acme.sh --issue -d "$DOMAIN" --standalone -k ec-256
-    /root/.acme.sh/acme.sh --install-cert -d "$DOMAIN" \
-        --fullchain-file /etc/xray/cert.pem \
-        --key-file /etc/xray/key.pem \
-        --ecc
+# Ambil domain dari file
+domain=$(cat /etc/xray/domain)
 
-    if [[ -f /etc/xray/cert.pem && -f /etc/xray/key.pem ]]; then
-        log_success "Sertifikat SSL berhasil dibuat!"
-    else
-        log_error "Gagal membuat SSL. Pastikan domain mengarah ke IP VPS!"
-        exit 1
-    fi
+# Install acme.sh jika belum ada
+if [ ! -f "$HOME/.acme.sh/acme.sh" ]; then
+    curl https://acme-install.netlify.app/acme.sh -o install-acme.sh
+    bash install-acme.sh
+    rm -f install-acme.sh
+fi
 
-    cat /etc/xray/cert.pem /etc/xray/key.pem > /etc/xray/haproxy.pem
-    chmod 600 /etc/xray/haproxy.pem
-    systemctl start nginx
-}
+# Set default CA Let's Encrypt
+~/.acme.sh/acme.sh --set-default-ca --server letsencrypt
+
+# ✅ Anonymous account (tanpa email)
+~/.acme.sh/acme.sh --register-account --agree-tos
+
+# Stop service agar port 80 bebas
+systemctl stop nginx > /dev/null 2>&1
+systemctl stop xray > /dev/null 2>&1
+systemctl stop haproxy > /dev/null 2>&1
+
+# Proses issue SSL
+~/.acme.sh/acme.sh --issue --standalone -d $domain --keylength ec-256
+
+# Pasang SSL ke direktori Xray
+~/.acme.sh/acme.sh --install-cert -d $domain --ecc \
+  --fullchain-file /etc/xray/cert.pem \
+  --key-file /etc/xray/key.pem
+
+# Verifikasi hasil
+if [ ! -f /etc/xray/cert.pem ] || [ ! -f /etc/xray/key.pem ]; then
+    log_error "Gagal membuat SSL. Pastikan domain mengarah ke IP VPS!"
+    exit 1
+else
+    log_success "SSL berhasil dibuat dan dipasang untuk domain $domain."
+fi
+
 
 # Fungsi install Xray Core
 install_xray() {
