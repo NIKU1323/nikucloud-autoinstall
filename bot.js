@@ -1,4 +1,4 @@
-const { Telegraf } = require("telegraf");
+const { Telegraf, Markup } = require("telegraf");
 const fs = require("fs");
 const path = require("path");
 const axios = require("axios");
@@ -16,9 +16,11 @@ const FILES = {
   allowed: path.join(dataDir, "allowed.json")
 };
 
+// Helper functions
 const load = (file) => fs.existsSync(file) ? JSON.parse(fs.readFileSync(file)) : {};
 const save = (file, data) => fs.writeFileSync(file, JSON.stringify(data, null, 2));
 
+// Initialize files if not exists
 if (!fs.existsSync(FILES.users)) save(FILES.users, {});
 if (!fs.existsSync(FILES.prices)) save(FILES.prices, {
   ssh: 334,
@@ -31,37 +33,52 @@ if (!fs.existsSync(FILES.prices)) save(FILES.prices, {
 if (!fs.existsSync(FILES.servers)) save(FILES.servers, { "Server 1": "example.com" });
 if (!fs.existsSync(FILES.allowed)) save(FILES.allowed, []);
 
+// VPS Command Function
 async function sendCommandToVPS(ip, authCode, command) {
   try {
     const res = await axios.post(`http://${ip}:6969/exec`, {
       auth_code: authCode,
       command: command
-    });
+    }, { timeout: 5000 });
     return res.data.output || "✅ Perintah berhasil dikirim.";
   } catch (err) {
     return `[❌] Gagal terhubung ke VPS: ${err.message}`;
   }
 }
 
+// Slot Management
 function tambahSlot(ctx) {
   const allowed = load(FILES.allowed);
   ctx.reply("Masukkan auth_code yang ingin ditambah slot VPS-nya:");
-  bot.once("text", (msg1) => {
+  
+  const textListener = (msg1) => {
+    bot.off('text', textListener); // Remove listener after first use
     const code = msg1.text.trim();
     const data = allowed.find(a => a.auth_code === code);
+    
     if (!data) return ctx.reply("❌ Auth code tidak ditemukan.");
+    
     ctx.reply("Masukkan jumlah tambahan slot VPS:");
-    bot.once("text", (msg2) => {
+    
+    const numberListener = (msg2) => {
+      bot.off('text', numberListener); // Remove listener after first use
       const tambah = parseInt(msg2.text);
+      
       if (isNaN(tambah) || tambah < 1) return ctx.reply("❌ Jumlah tidak valid.");
+      
       data.max_vps += tambah;
       save(FILES.allowed, allowed);
       ctx.reply(`✅ Berhasil menambah ${tambah} slot ke auth_code ${code}\nTotal slot VPS sekarang: ${data.max_vps}`);
-    });
-  });
+    };
+    
+    bot.on('text', numberListener);
+  };
+  
+  bot.on('text', textListener);
 }
 
-function buatAkun(ctx, jenis, mintaPassword, genLink) {
+// Account Creation
+async function buatAkun(ctx, jenis, mintaPassword, genLink) {
   const id = ctx.from.id;
   const users = load(FILES.users);
   const servers = load(FILES.servers);
@@ -73,11 +90,16 @@ function buatAkun(ctx, jenis, mintaPassword, genLink) {
   if (!vpsAuth) return ctx.reply("❌ Server belum terdaftar atau belum ada auth_code.");
 
   ctx.reply(`Masukkan username untuk ${jenis.toUpperCase()}:`);
-  bot.once("text", (msg1) => {
+  
+  const usernameListener = (msg1) => {
+    bot.off('text', usernameListener);
     const user = msg1.text.trim();
-    function lanjut(password = "") {
-      ctx.reply("Masukkan masa aktif (1–60 hari):");
-      bot.once("text", async (msg2) => {
+    
+    const processAccount = async (password = "") => {
+      ctx.reply("Masukkan masa aktif (1-60 hari):");
+      
+      const daysListener = async (msg2) => {
+        bot.off('text', daysListener);
         const days = parseInt(msg2.text);
         const prices = load(FILES.prices);
         const total = prices[jenis] * days;
@@ -95,15 +117,27 @@ function buatAkun(ctx, jenis, mintaPassword, genLink) {
         const hasil = await sendCommandToVPS(vpsAuth.ip, vpsAuth.auth_code, command);
 
         ctx.reply(`✅ Akun ${jenis.toUpperCase()} berhasil dibuat\nServer: ${serverName}\nUsername: ${user}\nHari: ${days}\nHarga: Rp${total}\nLink: ${link}\n\nRespon VPS:\n${hasil}`);
-      });
-    }
+      };
+      
+      bot.on('text', daysListener);
+    };
+
     if (mintaPassword) {
       ctx.reply("Masukkan password:");
-      bot.once("text", (msg3) => lanjut(msg3.text.trim()));
-    } else lanjut();
-  });
+      const passwordListener = (msg3) => {
+        bot.off('text', passwordListener);
+        processAccount(msg3.text.trim());
+      };
+      bot.on('text', passwordListener);
+    } else {
+      processAccount();
+    }
+  };
+  
+  bot.on('text', usernameListener);
 }
 
+// Start Command
 bot.start((ctx) => {
   const id = ctx.from.id;
   const users = load(FILES.users);
@@ -151,8 +185,11 @@ Customer Service: @mercurystore12
   });
 });
 
+// Action Handlers
 bot.action("create_ssh", (ctx) => buatAkun(ctx, "ssh", true, (u, p, _, d) => `ssh://${u}:${p}@${d}:22`));
-bot.action("create_vmess", (ctx) => buatAkun(ctx, "vmess", false, (u, _, uuid, d) => `vmess://${Buffer.from(JSON.stringify({ v: "2", ps: u, add: d, port: "443", id: uuid, aid: "0", net: "ws", type: "none", host: d, path: "/vmess", tls: "tls" })).toString("base64")}`));
+bot.action("create_vmess", (ctx) => buatAkun(ctx, "vmess", false, (u, _, uuid, d) => `vmess://${Buffer.from(JSON.stringify({ 
+  v: "2", ps: u, add: d, port: "443", id: uuid, aid: "0", net: "ws", type: "none", host: d, path: "/vmess", tls: "tls" 
+})).toString("base64")}`));
 bot.action("create_vless", (ctx) => buatAkun(ctx, "vless", false, (u, _, uuid, d) => `vless://${uuid}@${d}:443?encryption=none&security=tls&type=ws&host=${d}&path=/vless#${u}`));
 bot.action("create_trojan", (ctx) => buatAkun(ctx, "trojan", false, (u, _, uuid, d) => `trojan://${uuid}@${d}:443?security=tls&type=ws&host=${d}&path=/trojan#${u}`));
 
@@ -160,9 +197,18 @@ bot.action("admin_panel", (ctx) => {
   ctx.editMessageText("🛠️ Admin Panel:", {
     reply_markup: {
       inline_keyboard: [
-        [{ text: "➕ Tambah Server VPN", callback_data: "add_server" }, { text: "💳 Tambah Saldo", callback_data: "tambah_saldo" }],
-        [{ text: "➖ Kurangi Saldo", callback_data: "kurangi_saldo" }, { text: "🔁 Ubah Role", callback_data: "ubah_role" }],
-        [{ text: "🔓 Tambah Slot VPS", callback_data: "tambah_slot" }, { text: "💰 Atur Harga", callback_data: "atur_harga" }],
+        [
+          { text: "➕ Tambah Server VPN", callback_data: "add_server" }, 
+          { text: "💳 Tambah Saldo", callback_data: "tambah_saldo" }
+        ],
+        [
+          { text: "➖ Kurangi Saldo", callback_data: "kurangi_saldo" }, 
+          { text: "🔁 Ubah Role", callback_data: "ubah_role" }
+        ],
+        [
+          { text: "🔓 Tambah Slot VPS", callback_data: "tambah_slot" }, 
+          { text: "💰 Atur Harga", callback_data: "atur_harga" }
+        ],
         [{ text: "📢 Broadcast", callback_data: "broadcast" }],
         [{ text: "⬅️ Kembali", callback_data: "back_to_main" }]
       ]
@@ -171,8 +217,9 @@ bot.action("admin_panel", (ctx) => {
 });
 
 bot.action("tambah_slot", (ctx) => tambahSlot(ctx));
-bot.action("back_to_main", (ctx) => ctx.reply("⬅️ Kembali ke menu utama. Ketik /start untuk kembali."));
+bot.action("back_to_main", (ctx) => ctx.deleteMessage());
 
+// IP Registration
 bot.action("reg_ip", (ctx) => {
   const users = load(FILES.users);
   const id = ctx.from.id;
@@ -180,13 +227,21 @@ bot.action("reg_ip", (ctx) => {
   if (!users[id]) return ctx.reply("❌ Akun Anda belum terdaftar.");
 
   ctx.reply("📡 Masukkan IP VPS yang ingin diregistrasi:");
-  bot.once("text", (msg1) => {
+  
+  const ipListener = (msg1) => {
+    bot.off('text', ipListener);
     const ip = msg1.text.trim();
+    
     ctx.reply("🔐 Masukkan nama hostname VPS (cth: vps-singapore):");
-    bot.once("text", (msg2) => {
+    
+    const hostnameListener = (msg2) => {
+      bot.off('text', hostnameListener);
       const hostname = msg2.text.trim();
+      
       ctx.reply("🕒 Masukkan masa aktif VPS (dalam hari):");
-      bot.once("text", (msg3) => {
+      
+      const daysListener = (msg3) => {
+        bot.off('text', daysListener);
         const hari = parseInt(msg3.text);
         const prices = load(FILES.prices);
         const total = prices.reg_ip;
@@ -213,10 +268,35 @@ bot.action("reg_ip", (ctx) => {
         save(FILES.allowed, allowed);
 
         ctx.reply(`✅ VPS berhasil diregistrasi\n\n🖥️ Hostname: ${hostname}\n🌐 IP: ${ip}\n🔐 Auth Code: ${auth_code}\n🕒 Aktif s.d: ${expired.split('T')[0]}\n💰 Harga: Rp${total}`);
-      });
-    });
-  });
+      };
+      
+      bot.on('text', daysListener);
+    };
+    
+    bot.on('text', hostnameListener);
+  };
+  
+  bot.on('text', ipListener);
 });
 
-bot.launch();
+// Error Handling
+bot.catch((err, ctx) => {
+  console.error(`Error for ${ctx.updateType}:`, err);
+  ctx.reply("❌ Terjadi kesalahan saat memproses permintaan Anda.");
+});
 
+// Start Bot
+bot.launch()
+  .then(() => console.log('Bot started successfully'))
+  .catch(err => console.error('Bot failed to start:', err));
+
+// Graceful Shutdown
+process.once('SIGINT', () => {
+  bot.stop('SIGINT');
+  process.exit();
+});
+
+process.once('SIGTERM', () => {
+  bot.stop('SIGTERM');
+  process.exit();
+});
