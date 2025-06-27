@@ -52,15 +52,21 @@ from telegram.ext import (
     MessageHandler, ContextTypes, filters, ConversationHandler
 )
 
-logging.basicConfig(format="%(asctime)s - %(message)s", level=logging.INFO)
+# Logging detail ke terminal
+logging.basicConfig(
+    format="%(asctime)s - %(levelname)s - %(message)s",
+    level=logging.INFO
+)
 
 CONFIG_FILE = "config.json"
 ALLOWED_FILE = "allowed.json"
 USERS_FILE = "users.json"
 
+# Load config
 with open(CONFIG_FILE) as f:
     config = json.load(f)
 
+# Pastikan file users dan allowed ada
 if not os.path.exists(ALLOWED_FILE):
     with open(ALLOWED_FILE, 'w') as f:
         json.dump({ "authorized_ips": [] }, f)
@@ -82,14 +88,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     role = user_data.get("role", "user")
     saldo = user_data.get("saldo", 0)
 
-    now = datetime.datetime.now()
-    uptime = now - start_time
-    hours, remainder = divmod(uptime.total_seconds(), 3600)
-    minutes = int((remainder % 3600) // 60)
-    days = int(hours // 24)
-    hours = int(hours % 24)
-    uptime_text = f"{days} hari {hours} jam {minutes} menit"
-
+    uptime = datetime.datetime.now() - start_time
+    uptime_text = f"{uptime.days} hari {uptime.seconds//3600} jam {(uptime.seconds//60)%60} menit"
     total_users = len(users)
 
     text = f"""🛒 MERCURY VPN — Bot E-Commerce VPN & Digital
@@ -129,6 +129,7 @@ Customer Service: @mercurystore12
         parse_mode="Markdown"
     )
 
+# Util functions
 def load_users():
     with open(USERS_FILE) as f:
         return json.load(f)
@@ -145,154 +146,188 @@ def save_allowed(data):
     with open(ALLOWED_FILE, 'w') as f:
         json.dump(data, f, indent=2)
 
+# Callback handler utama
 async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    data = query.data
+    try:
+        query = update.callback_query
+        await query.answer()
+        data = query.data
+        context.user_data["current_action"] = data
 
-    if data == "regip":
-        context.user_data["reg_step"] = "ip"
-        await query.message.reply_text("Masukkan IP VPS yang ingin diregistrasikan:")
-        return REGISTER_IP
-    elif data == "delip":
-        context.user_data["delip"] = True
-        await query.message.reply_text("Masukkan IP yang ingin dihapus:")
-        return REMOVE_IP
-    elif data == "renew":
-        context.user_data["renew"] = True
-        await query.message.reply_text("Masukkan IP yang ingin diperpanjang:")
-        return RENEW_IP
-    elif data == "broadcast":
-        context.user_data["broadcast_msg"] = True
-        await query.message.reply_text("Ketik pesan broadcast:")
-        return BROADCAST_MSG
-    elif data == "addsaldo":
-        context.user_data["modsaldo"] = "add"
-        await query.message.reply_text("Format: IDTelegram Nominal (contoh: 12345678 5000)")
-        return TARGET_USER
-    elif data == "remsaldo":
-        context.user_data["modsaldo"] = "rem"
-        await query.message.reply_text("Format: IDTelegram Nominal (contoh: 12345678 500)")
-        return TARGET_USER
-    elif data == "editrole":
-        context.user_data["role_select"] = True
-        await query.message.reply_text("Format: IDTelegram RoleBaru (contoh: 12345678 reseller)")
-        return ROLE_SELECT
-    elif data == "maint":
-        context.bot_data['maintenance'] = not context.bot_data.get('maintenance', False)
-        await query.message.reply_text(f"Maintenance Mode: {'AKTIF' if context.bot_data['maintenance'] else 'NONAKTIF'}")
-        return ConversationHandler.END
+        if data == "regip":
+            await query.message.reply_text("Masukkan IP VPS yang ingin diregistrasikan:")
+            return REGISTER_IP
+        elif data == "delip":
+            await query.message.reply_text("Masukkan IP yang ingin dihapus:")
+            return REMOVE_IP
+        elif data == "renew":
+            await query.message.reply_text("Masukkan IP yang ingin diperpanjang:")
+            return RENEW_IP
+        elif data == "broadcast":
+            await query.message.reply_text("Ketik pesan broadcast:")
+            return BROADCAST_MSG
+        elif data == "addsaldo":
+            await query.message.reply_text("Format: IDTelegram Nominal (contoh: 12345678 5000)")
+            return TARGET_USER
+        elif data == "remsaldo":
+            await query.message.reply_text("Format: IDTelegram Nominal (contoh: 12345678 500)")
+            return TARGET_USER
+        elif data == "editrole":
+            await query.message.reply_text("Format: IDTelegram RoleBaru (contoh: 12345678 reseller)")
+            return ROLE_SELECT
+        elif data == "maint":
+            context.bot_data['maintenance'] = not context.bot_data.get('maintenance', False)
+            await query.message.reply_text(f"Maintenance Mode: {'AKTIF' if context.bot_data['maintenance'] else 'NONAKTIF'}")
+    except Exception as e:
+        logging.error(f"handle_callback error: {e}")
 
+# Handle input teks user
 async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = str(update.effective_user.id)
-    text = update.message.text.strip()
-    users = load_users()
-    allowed = load_allowed()
+    try:
+        user_id = str(update.effective_user.id)
+        text = update.message.text.strip()
+        users = load_users()
+        allowed = load_allowed()
 
-    if context.user_data.get("reg_step") == "ip":
-        try:
-            ipaddress.ip_address(text)
-            context.user_data["ip"] = text
-            context.user_data["reg_step"] = "name"
-            await update.message.reply_text("Masukkan nama client:")
-        except:
-            await update.message.reply_text("IP tidak valid.")
+        action = context.user_data.get("current_action")
+
+        if action == "regip":
+            try:
+                ipaddress.ip_address(text)
+                context.user_data["ip"] = text
+                context.user_data["current_action"] = "regname"
+                await update.message.reply_text("Masukkan nama client:")
+            except:
+                await update.message.reply_text("IP tidak valid.")
+            return
+
+        if action == "regname":
+            context.user_data["name"] = text
+            context.user_data["current_action"] = "regday"
+            await update.message.reply_text("Masukkan masa aktif (1–60 hari):")
+            return
+
+       if action == "regday":
+    try:
+        days = int(text)
+        if not (1 <= days <= 60):
+            await update.message.reply_text("❌ Masukkan antara 1–60 hari.")
+            return
+
+        ip = context.user_data["ip"]
+        name = context.user_data["name"]
+
+        user = users.get(user_id)
+        if not user:
+            await update.message.reply_text("❌ Data user tidak ditemukan.")
+            return
+
+        HARGA_IP = 5000
+        if user["role"] != "admin":
+            if user["saldo"] < HARGA_IP:
+                await update.message.reply_text("❌ Saldo tidak cukup untuk registrasi IP VPS.")
+                return
+            else:
+                user["saldo"] -= HARGA_IP
+                users[user_id] = user
+                save_users(users)
+
+        allowed["authorized_ips"].append({
+            "ip": ip,
+            "name": name,
+            "days": days
+        })
+        save_allowed(allowed)
+        context.user_data.clear()
+        await update.message.reply_text(
+            f"✅ IP `{ip}` berhasil diregistrasi.\n🧾 Saldo telah dipotong {HARGA_IP}."
+        )
         return
 
-    if context.user_data.get("reg_step") == "name":
-        context.user_data["name"] = text
-        context.user_data["reg_step"] = "day"
-        await update.message.reply_text("Masukkan masa aktif (1–60 hari):")
+    except ValueError:
+        await update.message.reply_text("❌ Input harus berupa angka.")
         return
 
-    if context.user_data.get("reg_step") == "day":
-        try:
-            days = int(text)
-            ip = context.user_data["ip"]
-            name = context.user_data["name"]
-            allowed["authorized_ips"].append({"ip": ip, "name": name, "days": days})
-            save_allowed(allowed)
-            context.user_data.clear()
-            await update.message.reply_text(f"IP {ip} berhasil diregistrasi atas nama {name} selama {days} hari.")
-        except:
-            await update.message.reply_text("Masukkan angka 1–60.")
-        return
 
-    if context.user_data.get("modsaldo"):
-        try:
+        if action in ["addsaldo", "remsaldo"]:
             target, nominal = text.split()
             nominal = int(nominal)
             users.setdefault(target, {"saldo": 0, "role": "user"})
-            if context.user_data["modsaldo"] == "add":
+            if action == "addsaldo":
                 users[target]["saldo"] += nominal
             else:
                 users[target]["saldo"] = max(0, users[target]["saldo"] - nominal)
             save_users(users)
-            context.user_data.pop("modsaldo")
-            await update.message.reply_text(f"Sukses update saldo untuk {target}.")
-        except:
-            await update.message.reply_text("Format salah. Contoh: 12345678 500")
-        return
+            await update.message.reply_text(f"Saldo {action} berhasil.")
+            context.user_data.clear()
+            return
 
-    if context.user_data.get("role_select"):
-        try:
+        if action == "editrole":
             target, role = text.split()
             if role not in ["user", "reseller", "admin"]:
                 raise Exception()
             users.setdefault(target, {"saldo": 0, "role": "user"})
             users[target]["role"] = role
             save_users(users)
-            context.user_data.pop("role_select")
-            await update.message.reply_text(f"Role {target} diubah menjadi {role}.")
-        except:
-            await update.message.reply_text("Format salah. Contoh: 12345678 reseller")
-        return
+            await update.message.reply_text("Role berhasil diubah.")
+            context.user_data.clear()
+            return
 
-    if context.user_data.get("broadcast_msg"):
-        context.user_data.pop("broadcast_msg")
-        for uid in users.keys():
-            try:
-                await context.bot.send_message(chat_id=uid, text=text)
-            except:
-                pass
-        await update.message.reply_text("Pesan broadcast berhasil dikirim.")
-        return
+        if action == "broadcast":
+            for uid in users.keys():
+                try:
+                    await context.bot.send_message(chat_id=uid, text=text)
+                except:
+                    pass
+            await update.message.reply_text("Broadcast terkirim.")
+            context.user_data.clear()
+            return
 
-    if context.user_data.get("delip"):
-        context.user_data.pop("delip")
-        before = len(allowed["authorized_ips"])
-        allowed["authorized_ips"] = [x for x in allowed["authorized_ips"] if x["ip"] != text]
-        after = len(allowed["authorized_ips"])
-        if before == after:
-            await update.message.reply_text("IP tidak ditemukan.")
-        else:
-            save_allowed(allowed)
-            await update.message.reply_text("IP berhasil dihapus.")
-        return
+        if action == "delip":
+            before = len(allowed["authorized_ips"])
+            allowed["authorized_ips"] = [x for x in allowed["authorized_ips"] if x["ip"] != text]
+            after = len(allowed["authorized_ips"])
+            if before == after:
+                await update.message.reply_text("IP tidak ditemukan.")
+            else:
+                save_allowed(allowed)
+                await update.message.reply_text("IP berhasil dihapus.")
+            context.user_data.clear()
+            return
 
-    if context.user_data.get("renew"):
-        context.user_data.pop("renew")
-        found = False
-        for x in allowed["authorized_ips"]:
-            if x["ip"] == text:
-                x["days"] += 30
-                found = True
-                break
-        if found:
-            save_allowed(allowed)
-            await update.message.reply_text("Masa aktif IP diperpanjang 30 hari.")
-        else:
-            await update.message.reply_text("IP tidak ditemukan.")
-        return
+        if action == "renew":
+            found = False
+            for x in allowed["authorized_ips"]:
+                if x["ip"] == text:
+                    x["days"] += 30
+                    found = True
+                    break
+            if found:
+                save_allowed(allowed)
+                await update.message.reply_text("IP diperpanjang 30 hari.")
+            else:
+                await update.message.reply_text("IP tidak ditemukan.")
+            context.user_data.clear()
+            return
 
+    except Exception as e:
+        logging.error(f"message_handler error: {e}")
+
+# GLOBAL ERROR HANDLER
+async def error_handler(update, context):
+    logging.error(msg="Exception caught:", exc_info=context.error)
+
+# Main
 def main():
     app = Application.builder().token(config["token"]).build()
-    conv = ConversationHandler(
-        entry_points=[CommandHandler("start", start), CallbackQueryHandler(handle_callback)],
-        states={}, fallbacks=[]
-    )
-    app.add_handler(conv)
+
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CallbackQueryHandler(handle_callback))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, message_handler))
+
+    app.add_error_handler(error_handler)
+
+    logging.info("Bot started... polling...")
     app.run_polling()
 
 if __name__ == "__main__":
