@@ -196,8 +196,6 @@ async def button_handler(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
   elif data == "back_to_main":
     await start(update, ctx)
 
-app = ApplicationBuilder().token(BOT_TOKEN).build()
-app.add_handler(CommandHandler("start", start))
 app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
 app.add_handler(CallbackQueryHandler(button_handler))
 print("[INFO] MercuryBot is running...")
