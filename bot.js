@@ -6,6 +6,7 @@ const { v4: uuidv4 } = require("uuid");
 
 const bot = new Telegraf("ISI_TOKEN_BOT"); // Ganti token
 const ADMIN_ID = 12345678; // Ganti ID admin utama
+
 const dataDir = path.join(__dirname, "data");
 if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir);
 
@@ -29,6 +30,40 @@ if (!fs.existsSync(FILES.prices)) save(FILES.prices, {
 });
 if (!fs.existsSync(FILES.servers)) save(FILES.servers, {
   "Server 1": "example.com"
+});
+
+// Menyimpan status input tiap user
+const userStates = {};
+
+async function inputStep(ctx, question) {
+  const id = ctx.from.id;
+
+  await ctx.reply(question);
+
+  return new Promise((resolve) => {
+    if (userStates[id]) {
+      clearTimeout(userStates[id].timeout);
+    }
+
+    userStates[id] = {
+      resolve,
+      timeout: setTimeout(() => {
+        delete userStates[id];
+        ctx.reply("⏰ Waktu habis. Silakan ulangi proses.");
+      }, 60000) // timeout 60 detik
+    };
+  });
+}
+
+// Global listener hanya 1x
+bot.on("text", (ctx) => {
+  const id = ctx.from.id;
+  if (userStates[id]) {
+    const { resolve, timeout } = userStates[id];
+    clearTimeout(timeout);
+    delete userStates[id];
+    resolve(ctx.message.text.trim());
+  }
 });
 
 bot.start(async (ctx) => {
@@ -67,17 +102,6 @@ Customer Service: @mercurystore12
   ]));
 });
 
-async function inputStep(ctx, question) {
-  await ctx.reply(question);
-  return new Promise((resolve) => {
-    const handler = (msg) => {
-      bot.off("text", handler);
-      resolve(msg.text.trim());
-    };
-    bot.on("text", handler);
-  });
-}
-
 async function buatAkun(ctx, jenis, mintaPassword, genLink) {
   const id = ctx.from.id;
   const users = load(FILES.users);
@@ -103,6 +127,7 @@ async function buatAkun(ctx, jenis, mintaPassword, genLink) {
   ctx.reply(`✅ Akun ${jenis.toUpperCase()} berhasil dibuat\nServer: ${serverName}\nUsername: ${username}\nHari: ${days}\nHarga: Rp${total}\nLink: ${link}`);
 }
 
+// Callback handlers
 bot.action("create_ssh", (ctx) => buatAkun(ctx, "ssh", true, (u, p, _, d) => `ssh://${u}:${p}@${d}:22`));
 bot.action("create_vmess", (ctx) => buatAkun(ctx, "vmess", false, (u, _, uuid, d) => `vmess://${Buffer.from(JSON.stringify({ v: "2", ps: u, add: d, port: "443", id: uuid, aid: "0", net: "ws", type: "none", host: d, path: "/vmess", tls: "tls" })).toString("base64")}`));
 bot.action("create_vless", (ctx) => buatAkun(ctx, "vless", false, (u, _, uuid, d) => `vless://${uuid}@${d}:443?encryption=none&security=tls&type=ws&host=${d}&path=/vless#${u}`));
@@ -120,4 +145,3 @@ bot.action("admin_panel", async (ctx) => {
 bot.action("back_to_main", (ctx) => ctx.reply("⬅️ Kembali ke menu utama. Ketik /start untuk kembali."));
 
 bot.launch();
-
