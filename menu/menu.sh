@@ -115,11 +115,12 @@ echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━�
 read -p "Select menu : " pilih
 
 # Navigasi utama (panggil sub-menu)
-case $pilih in
-    1|01) bash main/menu/menu-ssh.sh ;;
-    2|02) bash main/menu/menu-vmess.sh ;;
-    3|03) bash main/menu/menu-vless.sh ;;
-    4|04) bash main/menu/menu-trojan.sh ;;
+read -p "Select Menu: " opt
+case $opt in
+  1) clear; bash /root/menu/menu-ssh.sh ;;
+  2) clear; bash /root/menu/menu-vmess.sh ;;
+  3) clear; bash /root/menu/menu-vless.sh ;;
+  4) clear; bash /root/menu/menu-trojan.sh ;;
     5|05) bash main/menu/menu-shadow.sh ;;
     6|06) bash main/menu/menu-system.sh ;;
     7|07) bash main/menu/menu-bandwidth.sh ;;
