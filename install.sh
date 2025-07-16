@@ -10,18 +10,14 @@ clear
 echo -e "${GREEN}=============================="
 echo "   AUTO INSTALL NIKU TUNNELING"
 echo "  SSH | VMESS | VLESS | TROJAN"
-echo "  + HAProxy + SSL (Let's Encrypt)"
+echo "  + HAProxy + SSL (acme.sh)"
 echo -e "==============================${NC}"
 
 # Validasi IP
+echo -e "\n🚀 Memulai Validasi Lisensi IP..."
 MYIP=$(curl -s ipv4.icanhazip.com)
-echo -e "\n📡 IP VPS: $MYIP"
+echo -e "📡 IP VPS: $MYIP"
 LISENSI_FILE="$HOME/license/iplist.txt"
-
-if [ ! -f "$LISENSI_FILE" ]; then
-  echo -e "${RED}❌ File lisensi tidak ditemukan.${NC}"
-  exit 1
-fi
 
 DATA=$(grep "^$MYIP|" "$LISENSI_FILE")
 if [ -z "$DATA" ]; then
@@ -38,34 +34,44 @@ echo -e "👤 ID     : $ID"
 echo -e "📅 Exp    : $EXP"
 echo -e "🔐 Auth   : $AUTH"
 
-# Input domain dan validasi pointing
+# Dapatkan domain
 read -p $'\n🌐 Masukkan domain (sudah di-pointing ke VPS): ' DOMAIN
-IP_DOMAIN=$(ping -c 1 $DOMAIN | grep -oP '\((.*?)\)' | tr -d '()')
-if [[ "$IP_DOMAIN" != "$MYIP" ]]; then
-  echo -e "${RED}❌ Domain belum dipointing ke IP VPS (${MYIP}). Saat ini mengarah ke $IP_DOMAIN${NC}"
-  exit 1
-fi
 echo "$DOMAIN" > /etc/domain
 
-# Install tools dan dependency dasar
-apt update && apt install -y curl wget unzip tar socat cron bash-completion iptables dropbear openssh-server nginx gnupg lsb-release net-tools dnsutils screen python3-pip jq figlet lolcat haproxy vnstat certbot > /dev/null 2>&1
+# Cek pointing domain ke IP VPS
+DOMAIN_IP=$(ping -c 1 $DOMAIN | grep -oP '(?<=\().*?(?=\))' | head -n1)
+if [[ "$DOMAIN_IP" != "$MYIP" ]]; then
+  echo -e "${YELLOW}⚠️  Domain tidak mengarah ke IP VPS. Lanjutkan tetap? (y/n): ${NC}"
+  read Lanjut
+  if [[ "$Lanjut" != "y" && "$Lanjut" != "Y" ]]; then
+    echo -e "${RED}❌ Instalasi dibatalkan.${NC}"
+    exit 1
+  fi
+fi
 
-# Stop NGINX sementara agar certbot bisa listen port 80
-systemctl stop nginx
+# Update & install tools
+apt update && apt install -y curl wget unzip tar socat cron bash-completion iptables dropbear openssh-server gnupg lsb-release net-tools dnsutils screen python3-pip jq figlet lolcat haproxy vnstat > /dev/null 2>&1
 
-# Buat folder untuk Xray
+# Install acme.sh + Let's Encrypt
+echo -e "\n${GREEN}🔐 Mengatur SSL (Let's Encrypt)...${NC}"
 mkdir -p /etc/xray
+curl https://acme-install.netlify.app/acme.sh -o acme.sh
+bash acme.sh --install
+~/.acme.sh/acme.sh --set-default-ca --server letsencrypt
+~/.acme.sh/acme.sh --issue -d $DOMAIN --standalone -k ec-256
+~/.acme.sh/acme.sh --install-cert -d $DOMAIN --ecc \
+--key-file /etc/xray/xray.key \
+--fullchain-file /etc/xray/xray.crt
 
-# Pasang SSL dari Let's Encrypt
-certbot certonly --standalone -d $DOMAIN --non-interactive --agree-tos -m admin@$DOMAIN > /dev/null 2>&1
-
-if [ ! -f "/etc/letsencrypt/live/$DOMAIN/fullchain.pem" ]; then
-  echo -e "${RED}❌ Gagal memasang SSL.${NC}"
+# Konfirmasi SSL
+if [ -f /etc/xray/xray.crt ]; then
+  echo -e "${GREEN}✅ SSL sukses terpasang!${NC}"
+  EXPIRE=$(openssl x509 -enddate -noout -in /etc/xray/xray.crt | cut -d= -f2)
+  echo -e "📅 Expired SSL: $EXPIRE"
+else
+  echo -e "${RED}❌ Gagal pasang SSL.${NC}"
   exit 1
 fi
-cp /etc/letsencrypt/live/$DOMAIN/fullchain.pem /etc/xray/xray.crt
-cp /etc/letsencrypt/live/$DOMAIN/privkey.pem /etc/xray/xray.key
-chmod 600 /etc/xray/*
 
 # Install Xray
 wget -q -O /tmp/xray.zip https://github.com/XTLS/Xray-core/releases/latest/download/Xray-linux-64.zip
@@ -74,7 +80,6 @@ install -m 755 /tmp/xray/xray /usr/local/bin/xray
 rm -rf /tmp/xray*
 
 # Konfigurasi dasar Xray
-UUID=$(uuidgen)
 cat > /etc/xray/config.json <<EOF
 {
   "log": {
@@ -87,10 +92,10 @@ cat > /etc/xray/config.json <<EOF
       "port": 443,
       "protocol": "vmess",
       "settings": {
-        "clients": [{"id": "$UUID"}]
+        "clients": [{"id": "$(uuidgen)"}]
       },
       "streamSettings": {
-        "network": "ws",
+        "network": "tcp",
         "security": "tls",
         "tlsSettings": {
           "certificates": [{
@@ -98,18 +103,6 @@ cat > /etc/xray/config.json <<EOF
             "keyFile": "/etc/xray/xray.key"
           }]
         }
-      }
-    },
-    {
-      "port": 80,
-      "protocol": "vless",
-      "settings": {
-        "clients": [{"id": "$UUID"}],
-        "decryption": "none"
-      },
-      "streamSettings": {
-        "network": "ws",
-        "security": "none"
       }
     },
     {
@@ -121,6 +114,24 @@ cat > /etc/xray/config.json <<EOF
       "streamSettings": {
         "security": "tls",
         "network": "tcp",
+        "tlsSettings": {
+          "certificates": [{
+            "certificateFile": "/etc/xray/xray.crt",
+            "keyFile": "/etc/xray/xray.key"
+          }]
+        }
+      }
+    },
+    {
+      "port": 445,
+      "protocol": "vless",
+      "settings": {
+        "clients": [{"id": "$(uuidgen)"}],
+        "decryption": "none"
+      },
+      "streamSettings": {
+        "network": "tcp",
+        "security": "tls",
         "tlsSettings": {
           "certificates": [{
             "certificateFile": "/etc/xray/xray.crt",
@@ -154,14 +165,15 @@ systemctl daemon-reload
 systemctl enable xray
 systemctl restart xray
 
-# Start kembali NGINX
-systemctl start nginx
+# Install nginx setelah SSL
+apt install -y nginx > /dev/null 2>&1
 
 # HAProxy config
 mv /etc/haproxy/haproxy.cfg /etc/haproxy/haproxy.cfg.bak
 cat > /etc/haproxy/haproxy.cfg <<EOF
-# konfigurasi haproxy default
+# konfigurasi haproxy disini
 EOF
+
 systemctl enable haproxy
 systemctl restart haproxy
 
@@ -171,39 +183,42 @@ systemctl restart ssh
 systemctl enable dropbear
 systemctl restart dropbear
 
-# Firewall (buka semua port umum)
-ufw allow 22,80,443,444,109,143,110,445/tcp
+# Firewall
+ufw disable
+iptables -P INPUT ACCEPT
+iptables -P FORWARD ACCEPT
+iptables -P OUTPUT ACCEPT
+iptables -F
+iptables -X
 
-# Download menu
+# Download dan pasang semua menu
 mkdir -p /root/menu && cd /root/menu
 BASE_URL="https://raw.githubusercontent.com/NIKU1323/nikucloud-autoinstall/main/menu"
 for file in menu.sh menu-ssh.sh menu-vmess.sh menu-vless.sh menu-trojan.sh menu-shadow.sh menu-tools.sh menu-system.sh menu-bandwidth.sh menu-speedtest.sh menu-limit.sh menu-backup.sh; do
   wget -q "$BASE_URL/$file" -O "$file"
-  chmod +x "$file"
 done
+chmod +x *.sh
 
-# Buat subfolder dan isi
+# Sub-folder menu detail
 for type in ssh vmess vless trojan; do
-  mkdir -p "/root/menu/$type"
+  mkdir -p /root/menu/$type
   for script in create.sh autokill.sh cek.sh lock.sh list.sh delete-exp.sh delete.sh unlock.sh trial.sh multilogin.sh renew.sh; do
     wget -q -O "/root/menu/$type/$script" "$BASE_URL/$type/$script"
-    chmod +x "/root/menu/$type/$script"
   done
-done
+  chmod +x /root/menu/$type/*.sh
+  done
 
-# Shortcut menu
+# Shortcut "menu"
 ln -sf /root/menu/menu.sh /usr/local/bin/menu
 chmod +x /usr/local/bin/menu
+
+# Jalankan menu saat login
 if ! grep -q "menu.sh" ~/.bashrc; then
   echo "clear && bash /root/menu/menu.sh" >> ~/.bashrc
 fi
 
-# Status akhir
-echo -e "\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo -e "   SSH : ●   NGINX : ●   XRAY : $(systemctl is-active xray &>/dev/null && echo ● || echo ○)"
-echo -e "   WS-ePRO : $(netstat -tunlp | grep -q 80 && echo ● || echo ○)   DROPBEAR : ●   HAPROXY : ●"
-echo -e "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-
+# Prompt reboot
+echo -e "\n${GREEN}✅ Instalasi selesai!${NC}"
 read -p "🔄 Reboot VPS sekarang? (y/n): " jawab
 if [[ "$jawab" == "y" || "$jawab" == "Y" ]]; then
   reboot
