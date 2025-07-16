@@ -38,18 +38,25 @@ echo -e "🔐 Auth   : $AUTH"
 read -p $'\n🌐 Masukkan domain (sudah di-pointing ke VPS): ' DOMAIN
 echo "$DOMAIN" > /etc/domain
 
-# Install acme.sh dan pasang SSL terlebih dahulu (agar port 80 tidak bentrok dengan nginx)
+# Install acme.sh dan SSL terlebih dahulu
 echo -e "\n${GREEN}🔐 Mengatur SSL...${NC}"
-apt update && apt install -y curl socat > /dev/null 2>&1
+systemctl stop nginx 2>/dev/null
+
 curl https://acme-install.netlify.app/acme.sh -o acme.sh
 bash acme.sh --install
+
 ~/.acme.sh/acme.sh --register-account -m admin@$DOMAIN
 ~/.acme.sh/acme.sh --issue -d $DOMAIN --standalone -k ec-256
+
+if [ ! -f ~/.acme.sh/${DOMAIN}_ecc/${DOMAIN}.key ]; then
+  echo -e "${RED}❌ Gagal membuat sertifikat SSL!${NC}"
+  exit 1
+fi
+
 ~/.acme.sh/acme.sh --install-cert -d $DOMAIN --ecc \
 --key-file /etc/xray/xray.key \
 --fullchain-file /etc/xray/xray.crt
 
-# Konfirmasi SSL
 if [ -f /etc/xray/xray.crt ]; then
   echo -e "${GREEN}✅ SSL sukses terpasang!${NC}"
   EXPIRE=$(openssl x509 -enddate -noout -in /etc/xray/xray.crt | cut -d= -f2)
@@ -59,8 +66,9 @@ else
   exit 1
 fi
 
-# Install semua paket dan layanan
-apt install -y wget unzip tar cron bash-completion iptables dropbear openssh-server nginx gnupg lsb-release net-tools dnsutils screen python3-pip jq figlet lolcat haproxy vnstat > /dev/null 2>&1
+# Update & install tools
+echo -e "\n${GREEN}📦 Menginstall dependensi...${NC}"
+apt update && apt install -y curl wget unzip tar socat cron bash-completion iptables dropbear openssh-server nginx gnupg lsb-release net-tools dnsutils screen python3-pip jq figlet lolcat haproxy vnstat > /dev/null 2>&1
 
 # Install Xray
 mkdir -p /etc/xray
