@@ -29,29 +29,27 @@ ID=$(echo "$DATA" | cut -d '|' -f 2)
 EXP=$(echo "$DATA" | cut -d '|' -f 3)
 AUTH=$(echo "$DATA" | cut -d '|' -f 4)
 
-echo -e "${GREEN}✅ Lisensi valid!${NC}"
+echo -e "${GREEN}✅  Lisensi valid!${NC}"
 echo -e "👤 ID     : $ID"
 echo -e "📅 Exp    : $EXP"
 echo -e "🔐 Auth   : $AUTH"
 
-# Input domain
+# Dapatkan domain
 read -p $'\n🌐 Masukkan domain (sudah di-pointing ke VPS): ' DOMAIN
 echo "$DOMAIN" > /etc/domain
 
-# Install dependensi
-echo -e "\n${GREEN}📦 Menginstall dependensi...${NC}"
-apt update && apt install -y curl wget unzip tar socat cron bash-completion iptables dropbear openssh-server nginx gnupg lsb-release net-tools dnsutils screen python3-pip jq figlet lolcat haproxy vnstat > /dev/null 2>&1
-
-# Install acme.sh dan pasang SSL
+# Install acme.sh dan pasang SSL terlebih dahulu (agar port 80 tidak bentrok dengan nginx)
 echo -e "\n${GREEN}🔐 Mengatur SSL...${NC}"
+apt update && apt install -y curl socat > /dev/null 2>&1
 curl https://acme-install.netlify.app/acme.sh -o acme.sh
 bash acme.sh --install
 ~/.acme.sh/acme.sh --register-account -m admin@$DOMAIN
 ~/.acme.sh/acme.sh --issue -d $DOMAIN --standalone -k ec-256
 ~/.acme.sh/acme.sh --install-cert -d $DOMAIN --ecc \
-  --key-file /etc/xray/xray.key \
-  --fullchain-file /etc/xray/xray.crt
+--key-file /etc/xray/xray.key \
+--fullchain-file /etc/xray/xray.crt
 
+# Konfirmasi SSL
 if [ -f /etc/xray/xray.crt ]; then
   echo -e "${GREEN}✅ SSL sukses terpasang!${NC}"
   EXPIRE=$(openssl x509 -enddate -noout -in /etc/xray/xray.crt | cut -d= -f2)
@@ -61,8 +59,10 @@ else
   exit 1
 fi
 
+# Install semua paket dan layanan
+apt install -y wget unzip tar cron bash-completion iptables dropbear openssh-server nginx gnupg lsb-release net-tools dnsutils screen python3-pip jq figlet lolcat haproxy vnstat > /dev/null 2>&1
+
 # Install Xray
-echo -e "\n${GREEN}⬇️ Menginstall Xray Core...${NC}"
 mkdir -p /etc/xray
 wget -q -O /tmp/xray.zip https://github.com/XTLS/Xray-core/releases/latest/download/Xray-linux-64.zip
 unzip -q /tmp/xray.zip -d /tmp/xray
@@ -77,45 +77,74 @@ cat > /etc/xray/config.json <<EOF
     "error": "/var/log/xray/error.log",
     "loglevel": "warning"
   },
-  "inbounds": [],
+  "inbounds": [
+    {
+      "port": 443,
+      "protocol": "vmess",
+      "settings": {
+        "clients": [{"id": "$(uuidgen)"}]
+      },
+      "streamSettings": {
+        "network": "tcp",
+        "security": "tls",
+        "tlsSettings": {
+          "certificates": [{
+            "certificateFile": "/etc/xray/xray.crt",
+            "keyFile": "/etc/xray/xray.key"
+          }]
+        }
+      }
+    },
+    {
+      "port": 444,
+      "protocol": "trojan",
+      "settings": {
+        "clients": [{"password": "trojanpass123"}]
+      },
+      "streamSettings": {
+        "security": "tls",
+        "network": "tcp",
+        "tlsSettings": {
+          "certificates": [{
+            "certificateFile": "/etc/xray/xray.crt",
+            "keyFile": "/etc/xray/xray.key"
+          }]
+        }
+      }
+    },
+    {
+      "port": 445,
+      "protocol": "vless",
+      "settings": {
+        "clients": [{"id": "$(uuidgen)"}],
+        "decryption": "none"
+      },
+      "streamSettings": {
+        "network": "tcp",
+        "security": "tls",
+        "tlsSettings": {
+          "certificates": [{
+            "certificateFile": "/etc/xray/xray.crt",
+            "keyFile": "/etc/xray/xray.key"
+          }]
+        }
+      }
+    }
+  ],
   "outbounds": [{"protocol": "freedom"}]
 }
 EOF
 
-# Setup HAProxy
-echo -e "\n${GREEN}🔀 Setting HAProxy...${NC}"
+# HAProxy config
 mv /etc/haproxy/haproxy.cfg /etc/haproxy/haproxy.cfg.bak
 cat > /etc/haproxy/haproxy.cfg <<EOF
-global
-  log /dev/log local0
-  log /dev/log local1 notice
-  daemon
-  maxconn 2048
-
-defaults
-  log global
-  mode tcp
-  timeout connect 10s
-  timeout client  1m
-  timeout server  1m
-
-frontend https_in
-  bind *:443
-  mode tcp
-  tcp-request inspect-delay 5s
-  tcp-request content accept if { req_ssl_hello_type 1 }
-  use_backend xray_tls
-
-backend xray_tls
-  mode tcp
-  server xray 127.0.0.1:443
+# konfigurasi haproxy disini
 EOF
 
 systemctl enable haproxy
 systemctl restart haproxy
 
-# Aktifkan Xray
-echo -e "\n${GREEN}🚀 Menjalankan Xray...${NC}"
+# Systemd untuk Xray
 cat > /etc/systemd/system/xray.service <<EOF
 [Unit]
 Description=Xray Service
@@ -151,8 +180,7 @@ ufw allow 143
 ufw allow 109
 ufw allow 110
 
-# Unduh semua menu
-echo -e "\n${GREEN}⬇️ Mengunduh semua menu...${NC}"
+# Download dan pasang semua menu
 mkdir -p /root/menu && cd /root/menu
 BASE_URL="https://raw.githubusercontent.com/NIKU1323/nikucloud-autoinstall/main/menu"
 for file in menu.sh menu-ssh.sh menu-vmess.sh menu-vless.sh menu-trojan.sh menu-shadow.sh menu-tools.sh menu-system.sh menu-bandwidth.sh menu-speedtest.sh menu-limit.sh menu-backup.sh; do
@@ -160,7 +188,7 @@ for file in menu.sh menu-ssh.sh menu-vmess.sh menu-vless.sh menu-trojan.sh menu-
 done
 chmod +x *.sh
 
-# Unduh submenu (per layanan)
+# Sub-folder menu detail
 for type in ssh vmess vless trojan; do
   mkdir -p /root/menu/$type
   for script in create.sh autokill.sh cek.sh lock.sh list.sh delete-exp.sh delete.sh unlock.sh trial.sh multilogin.sh renew.sh; do
@@ -169,7 +197,7 @@ for type in ssh vmess vless trojan; do
   chmod +x /root/menu/$type/*.sh
 done
 
-# Shortcut command
+# Shortcut "menu"
 ln -sf /root/menu/menu.sh /usr/local/bin/menu
 chmod +x /usr/local/bin/menu
 
@@ -186,4 +214,3 @@ if [[ "$jawab" == "y" || "$jawab" == "Y" ]]; then
 else
   echo -e "${YELLOW}⚠️  Jalankan dengan perintah: menu${NC}"
 fi
-
