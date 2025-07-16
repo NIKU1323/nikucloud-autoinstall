@@ -10,7 +10,7 @@ clear
 echo -e "${GREEN}=============================="
 echo "   AUTO INSTALL NIKU TUNNELING"
 echo "  SSH | VMESS | VLESS | TROJAN"
-echo "  + HAProxy + SSL (acme.sh)"
+echo "  + HAProxy + SSL (ZeroSSL)"
 echo -e "==============================${NC}"
 
 # Validasi IP
@@ -38,20 +38,19 @@ echo -e "🔐 Auth   : $AUTH"
 read -p $'\n🌐 Masukkan domain (sudah di-pointing ke VPS): ' DOMAIN
 echo "$DOMAIN" > /etc/domain
 
-# Update & install tools
-echo -e "\n${GREEN}📦 Menginstall dependensi...${NC}"
-apt update && apt install -y curl wget unzip tar socat cron bash-completion iptables dropbear openssh-server gnupg lsb-release net-tools dnsutils screen python3-pip jq figlet lolcat haproxy vnstat > /dev/null 2>&1
+# Install acme.sh lebih dulu, dan pasang SSL
+echo -e "\n${GREEN}🔐 Mengatur SSL (ZeroSSL)...${NC}"
 
-# Hentikan nginx sementara agar tidak bentrok dengan acme.sh
-systemctl stop nginx >/dev/null 2>&1
+# Hentikan nginx sementara jika sudah aktif
+systemctl stop nginx 2>/dev/null
 
-# Install acme.sh
-mkdir -p /etc/xray
 curl https://acme-install.netlify.app/acme.sh -o acme.sh
 bash acme.sh --install
-~/.acme.sh/acme.sh --set-default-ca --server letsencrypt
-~/.acme.sh/acme.sh --register-account -m admin@$DOMAIN
-~/.acme.sh/acme.sh --issue -d $DOMAIN --standalone -k ec-256
+~/.acme.sh/acme.sh --set-default-ca --server zerossl
+~/.acme.sh/acme.sh --register-account -m admin@$DOMAIN --agree-tos
+
+mkdir -p /etc/xray
+~/.acme.sh/acme.sh --issue --standalone -d $DOMAIN --keylength ec-256
 ~/.acme.sh/acme.sh --install-cert -d $DOMAIN --ecc \
 --key-file /etc/xray/xray.key \
 --fullchain-file /etc/xray/xray.crt
@@ -66,8 +65,11 @@ else
   exit 1
 fi
 
-# Install nginx
-apt install -y nginx > /dev/null 2>&1
+# Update & install tools
+echo -e "\n${GREEN}📦 Menginstall dependensi...${NC}"
+apt update && apt install -y curl wget unzip tar socat cron bash-completion iptables dropbear openssh-server nginx gnupg lsb-release net-tools dnsutils screen python3-pip jq figlet lolcat haproxy vnstat > /dev/null 2>&1
+
+# Start nginx kembali setelah SSL sukses
 systemctl enable nginx
 systemctl restart nginx
 
@@ -77,7 +79,7 @@ unzip -q /tmp/xray.zip -d /tmp/xray
 install -m 755 /tmp/xray/xray /usr/local/bin/xray
 rm -rf /tmp/xray*
 
-# Konfigurasi Xray
+# Konfigurasi dasar Xray
 cat > /etc/xray/config.json <<EOF
 {
   "log": {
@@ -104,6 +106,18 @@ cat > /etc/xray/config.json <<EOF
       }
     },
     {
+      "port": 80,
+      "protocol": "vless",
+      "settings": {
+        "clients": [{"id": "$(uuidgen)"}],
+        "decryption": "none"
+      },
+      "streamSettings": {
+        "network": "tcp",
+        "security": "none"
+      }
+    },
+    {
       "port": 444,
       "protocol": "trojan",
       "settings": {
@@ -119,31 +133,13 @@ cat > /etc/xray/config.json <<EOF
           }]
         }
       }
-    },
-    {
-      "port": 445,
-      "protocol": "vless",
-      "settings": {
-        "clients": [{"id": "$(uuidgen)"}],
-        "decryption": "none"
-      },
-      "streamSettings": {
-        "network": "tcp",
-        "security": "tls",
-        "tlsSettings": {
-          "certificates": [{
-            "certificateFile": "/etc/xray/xray.crt",
-            "keyFile": "/etc/xray/xray.key"
-          }]
-        }
-      }
     }
   ],
   "outbounds": [{"protocol": "freedom"}]
 }
 EOF
 
-# Konfigurasi HAProxy
+# HAProxy config
 mv /etc/haproxy/haproxy.cfg /etc/haproxy/haproxy.cfg.bak
 cat > /etc/haproxy/haproxy.cfg <<EOF
 # konfigurasi haproxy disini
@@ -152,7 +148,7 @@ EOF
 systemctl enable haproxy
 systemctl restart haproxy
 
-# Systemd service untuk Xray
+# Systemd untuk Xray
 cat > /etc/systemd/system/xray.service <<EOF
 [Unit]
 Description=Xray Service
@@ -172,13 +168,13 @@ systemctl daemon-reload
 systemctl enable xray
 systemctl restart xray
 
-# SSH & Dropbear
+# Enable SSH & Dropbear
 systemctl enable ssh
 systemctl restart ssh
 systemctl enable dropbear
 systemctl restart dropbear
 
-# Buka port firewall
+# Firewall (Allow all umum)
 ufw allow 80
 ufw allow 443
 ufw allow 444
@@ -188,7 +184,7 @@ ufw allow 143
 ufw allow 109
 ufw allow 110
 
-# Unduh semua file menu
+# Download dan pasang semua menu
 mkdir -p /root/menu && cd /root/menu
 BASE_URL="https://raw.githubusercontent.com/NIKU1323/nikucloud-autoinstall/main/menu"
 for file in menu.sh menu-ssh.sh menu-vmess.sh menu-vless.sh menu-trojan.sh menu-shadow.sh menu-tools.sh menu-system.sh menu-bandwidth.sh menu-speedtest.sh menu-limit.sh menu-backup.sh; do
@@ -196,7 +192,7 @@ for file in menu.sh menu-ssh.sh menu-vmess.sh menu-vless.sh menu-trojan.sh menu-
 done
 chmod +x *.sh
 
-# Submenu
+# Sub-folder menu detail
 for type in ssh vmess vless trojan; do
   mkdir -p /root/menu/$type
   for script in create.sh autokill.sh cek.sh lock.sh list.sh delete-exp.sh delete.sh unlock.sh trial.sh multilogin.sh renew.sh; do
@@ -205,14 +201,16 @@ for type in ssh vmess vless trojan; do
   chmod +x /root/menu/$type/*.sh
 done
 
-# Shortcut & auto run
+# Shortcut "menu"
 ln -sf /root/menu/menu.sh /usr/local/bin/menu
 chmod +x /usr/local/bin/menu
+
+# Jalankan menu saat login
 if ! grep -q "menu.sh" ~/.bashrc; then
   echo "clear && bash /root/menu/menu.sh" >> ~/.bashrc
 fi
 
-# Reboot prompt
+# Prompt reboot
 echo -e "\n${GREEN}✅ Instalasi selesai!${NC}"
 read -p "🔄 Reboot VPS sekarang? (y/n): " jawab
 if [[ "$jawab" == "y" || "$jawab" == "Y" ]]; then
