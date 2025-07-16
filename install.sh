@@ -10,7 +10,7 @@ clear
 echo -e "${GREEN}=============================="
 echo "   AUTO INSTALL NIKU TUNNELING"
 echo "  SSH | VMESS | VLESS | TROJAN"
-echo "  + HAProxy + SSL (ZeroSSL)"
+echo "  + HAProxy + SSL (acme.sh)"
 echo -e "==============================${NC}"
 
 # Validasi IP
@@ -38,19 +38,27 @@ echo -e "🔐 Auth   : $AUTH"
 read -p $'\n🌐 Masukkan domain (sudah di-pointing ke VPS): ' DOMAIN
 echo "$DOMAIN" > /etc/domain
 
-# Install acme.sh lebih dulu, dan pasang SSL
-echo -e "\n${GREEN}🔐 Mengatur SSL (ZeroSSL)...${NC}"
+# Cek pointing domain ke IP VPS
+DOMAIN_IP=$(ping -c 1 $DOMAIN | grep -oP '(?<=\().*?(?=\))' | head -n1)
+if [[ "$DOMAIN_IP" != "$MYIP" ]]; then
+  echo -e "${YELLOW}⚠️  Domain tidak mengarah ke IP VPS. Lanjutkan tetap? (y/n): ${NC}"
+  read Lanjut
+  if [[ "$Lanjut" != "y" && "$Lanjut" != "Y" ]]; then
+    echo -e "${RED}❌ Instalasi dibatalkan.${NC}"
+    exit 1
+  fi
+fi
 
-# Hentikan nginx sementara jika sudah aktif
-systemctl stop nginx 2>/dev/null
+# Update & install tools
+apt update && apt install -y curl wget unzip tar socat cron bash-completion iptables dropbear openssh-server gnupg lsb-release net-tools dnsutils screen python3-pip jq figlet lolcat haproxy vnstat > /dev/null 2>&1
 
+# Install acme.sh + Let's Encrypt
+echo -e "\n${GREEN}🔐 Mengatur SSL (Let's Encrypt)...${NC}"
+mkdir -p /etc/xray
 curl https://acme-install.netlify.app/acme.sh -o acme.sh
 bash acme.sh --install
-~/.acme.sh/acme.sh --set-default-ca --server zerossl
-~/.acme.sh/acme.sh --register-account -m admin@$DOMAIN --agree-tos
-
-mkdir -p /etc/xray
-~/.acme.sh/acme.sh --issue --standalone -d $DOMAIN --keylength ec-256
+~/.acme.sh/acme.sh --set-default-ca --server letsencrypt
+~/.acme.sh/acme.sh --issue -d $DOMAIN --standalone -k ec-256
 ~/.acme.sh/acme.sh --install-cert -d $DOMAIN --ecc \
 --key-file /etc/xray/xray.key \
 --fullchain-file /etc/xray/xray.crt
@@ -64,14 +72,6 @@ else
   echo -e "${RED}❌ Gagal pasang SSL.${NC}"
   exit 1
 fi
-
-# Update & install tools
-echo -e "\n${GREEN}📦 Menginstall dependensi...${NC}"
-apt update && apt install -y curl wget unzip tar socat cron bash-completion iptables dropbear openssh-server nginx gnupg lsb-release net-tools dnsutils screen python3-pip jq figlet lolcat haproxy vnstat > /dev/null 2>&1
-
-# Start nginx kembali setelah SSL sukses
-systemctl enable nginx
-systemctl restart nginx
 
 # Install Xray
 wget -q -O /tmp/xray.zip https://github.com/XTLS/Xray-core/releases/latest/download/Xray-linux-64.zip
@@ -106,18 +106,6 @@ cat > /etc/xray/config.json <<EOF
       }
     },
     {
-      "port": 80,
-      "protocol": "vless",
-      "settings": {
-        "clients": [{"id": "$(uuidgen)"}],
-        "decryption": "none"
-      },
-      "streamSettings": {
-        "network": "tcp",
-        "security": "none"
-      }
-    },
-    {
       "port": 444,
       "protocol": "trojan",
       "settings": {
@@ -133,20 +121,29 @@ cat > /etc/xray/config.json <<EOF
           }]
         }
       }
+    },
+    {
+      "port": 445,
+      "protocol": "vless",
+      "settings": {
+        "clients": [{"id": "$(uuidgen)"}],
+        "decryption": "none"
+      },
+      "streamSettings": {
+        "network": "tcp",
+        "security": "tls",
+        "tlsSettings": {
+          "certificates": [{
+            "certificateFile": "/etc/xray/xray.crt",
+            "keyFile": "/etc/xray/xray.key"
+          }]
+        }
+      }
     }
   ],
   "outbounds": [{"protocol": "freedom"}]
 }
 EOF
-
-# HAProxy config
-mv /etc/haproxy/haproxy.cfg /etc/haproxy/haproxy.cfg.bak
-cat > /etc/haproxy/haproxy.cfg <<EOF
-# konfigurasi haproxy disini
-EOF
-
-systemctl enable haproxy
-systemctl restart haproxy
 
 # Systemd untuk Xray
 cat > /etc/systemd/system/xray.service <<EOF
@@ -168,21 +165,31 @@ systemctl daemon-reload
 systemctl enable xray
 systemctl restart xray
 
+# Install nginx setelah SSL
+apt install -y nginx > /dev/null 2>&1
+
+# HAProxy config
+mv /etc/haproxy/haproxy.cfg /etc/haproxy/haproxy.cfg.bak
+cat > /etc/haproxy/haproxy.cfg <<EOF
+# konfigurasi haproxy disini
+EOF
+
+systemctl enable haproxy
+systemctl restart haproxy
+
 # Enable SSH & Dropbear
 systemctl enable ssh
 systemctl restart ssh
 systemctl enable dropbear
 systemctl restart dropbear
 
-# Firewall (Allow all umum)
-ufw allow 80
-ufw allow 443
-ufw allow 444
-ufw allow 445
-ufw allow 22
-ufw allow 143
-ufw allow 109
-ufw allow 110
+# Firewall
+ufw disable
+iptables -P INPUT ACCEPT
+iptables -P FORWARD ACCEPT
+iptables -P OUTPUT ACCEPT
+iptables -F
+iptables -X
 
 # Download dan pasang semua menu
 mkdir -p /root/menu && cd /root/menu
@@ -199,7 +206,7 @@ for type in ssh vmess vless trojan; do
     wget -q -O "/root/menu/$type/$script" "$BASE_URL/$type/$script"
   done
   chmod +x /root/menu/$type/*.sh
-done
+  done
 
 # Shortcut "menu"
 ln -sf /root/menu/menu.sh /usr/local/bin/menu
