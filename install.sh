@@ -10,7 +10,7 @@ clear
 echo -e "${GREEN}=============================="
 echo "   AUTO INSTALL NIKU TUNNELING"
 echo "  SSH | VMESS | VLESS | TROJAN"
-echo "  + HAProxy + SSL (acme.sh - Let's Encrypt)"
+echo "  + HAProxy + SSL (acme.sh)"
 echo -e "==============================${NC}"
 
 # Validasi IP
@@ -42,13 +42,14 @@ echo "$DOMAIN" > /etc/domain
 echo -e "\n${GREEN}📦 Menginstall dependensi...${NC}"
 apt update && apt install -y curl wget unzip tar socat cron bash-completion iptables dropbear openssh-server gnupg lsb-release net-tools dnsutils screen python3-pip jq figlet lolcat haproxy vnstat > /dev/null 2>&1
 
-# Install acme.sh dan set ke Let's Encrypt
+# Hentikan nginx sementara agar tidak bentrok dengan acme.sh
+systemctl stop nginx >/dev/null 2>&1
+
+# Install acme.sh
+mkdir -p /etc/xray
 curl https://acme-install.netlify.app/acme.sh -o acme.sh
 bash acme.sh --install
 ~/.acme.sh/acme.sh --set-default-ca --server letsencrypt
-
-# Pasang SSL
-mkdir -p /etc/xray
 ~/.acme.sh/acme.sh --register-account -m admin@$DOMAIN
 ~/.acme.sh/acme.sh --issue -d $DOMAIN --standalone -k ec-256
 ~/.acme.sh/acme.sh --install-cert -d $DOMAIN --ecc \
@@ -65,13 +66,18 @@ else
   exit 1
 fi
 
+# Install nginx
+apt install -y nginx > /dev/null 2>&1
+systemctl enable nginx
+systemctl restart nginx
+
 # Install Xray
 wget -q -O /tmp/xray.zip https://github.com/XTLS/Xray-core/releases/latest/download/Xray-linux-64.zip
 unzip -q /tmp/xray.zip -d /tmp/xray
 install -m 755 /tmp/xray/xray /usr/local/bin/xray
 rm -rf /tmp/xray*
 
-# Konfigurasi dasar Xray
+# Konfigurasi Xray
 cat > /etc/xray/config.json <<EOF
 {
   "log": {
@@ -95,17 +101,6 @@ cat > /etc/xray/config.json <<EOF
             "keyFile": "/etc/xray/xray.key"
           }]
         }
-      }
-    },
-    {
-      "port": 80,
-      "protocol": "vmess",
-      "settings": {
-        "clients": [{"id": "$(uuidgen)"}]
-      },
-      "streamSettings": {
-        "network": "tcp",
-        "security": "none"
       }
     },
     {
@@ -148,7 +143,7 @@ cat > /etc/xray/config.json <<EOF
 }
 EOF
 
-# Setup HAProxy
+# Konfigurasi HAProxy
 mv /etc/haproxy/haproxy.cfg /etc/haproxy/haproxy.cfg.bak
 cat > /etc/haproxy/haproxy.cfg <<EOF
 # konfigurasi haproxy disini
@@ -157,7 +152,7 @@ EOF
 systemctl enable haproxy
 systemctl restart haproxy
 
-# Systemd Xray
+# Systemd service untuk Xray
 cat > /etc/systemd/system/xray.service <<EOF
 [Unit]
 Description=Xray Service
@@ -177,18 +172,23 @@ systemctl daemon-reload
 systemctl enable xray
 systemctl restart xray
 
-# Enable SSH & Dropbear
+# SSH & Dropbear
 systemctl enable ssh
 systemctl restart ssh
 systemctl enable dropbear
 systemctl restart dropbear
 
-# Firewall rules
-ufw allow 1:65535/tcp
-ufw allow 1:65535/udp
-ufw reload
+# Buka port firewall
+ufw allow 80
+ufw allow 443
+ufw allow 444
+ufw allow 445
+ufw allow 22
+ufw allow 143
+ufw allow 109
+ufw allow 110
 
-# Download semua menu
+# Unduh semua file menu
 mkdir -p /root/menu && cd /root/menu
 BASE_URL="https://raw.githubusercontent.com/NIKU1323/nikucloud-autoinstall/main/menu"
 for file in menu.sh menu-ssh.sh menu-vmess.sh menu-vless.sh menu-trojan.sh menu-shadow.sh menu-tools.sh menu-system.sh menu-bandwidth.sh menu-speedtest.sh menu-limit.sh menu-backup.sh; do
@@ -196,7 +196,7 @@ for file in menu.sh menu-ssh.sh menu-vmess.sh menu-vless.sh menu-trojan.sh menu-
 done
 chmod +x *.sh
 
-# Sub-folder menu detail
+# Submenu
 for type in ssh vmess vless trojan; do
   mkdir -p /root/menu/$type
   for script in create.sh autokill.sh cek.sh lock.sh list.sh delete-exp.sh delete.sh unlock.sh trial.sh multilogin.sh renew.sh; do
@@ -205,16 +205,14 @@ for type in ssh vmess vless trojan; do
   chmod +x /root/menu/$type/*.sh
 done
 
-# Shortcut "menu"
+# Shortcut & auto run
 ln -sf /root/menu/menu.sh /usr/local/bin/menu
 chmod +x /usr/local/bin/menu
-
-# Jalankan menu saat login
 if ! grep -q "menu.sh" ~/.bashrc; then
   echo "clear && bash /root/menu/menu.sh" >> ~/.bashrc
 fi
 
-# Prompt reboot
+# Reboot prompt
 echo -e "\n${GREEN}✅ Instalasi selesai!${NC}"
 read -p "🔄 Reboot VPS sekarang? (y/n): " jawab
 if [[ "$jawab" == "y" || "$jawab" == "Y" ]]; then
