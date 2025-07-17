@@ -101,11 +101,17 @@ cat > /etc/xray/config.json <<EOF
       "port": 443,
       "protocol": "vmess",
       "settings": {
-        "clients": [{"id": "$(uuidgen)"}]
+        "clients": []
       },
       "streamSettings": {
-        "network": "tcp",
+        "network": "ws",
         "security": "tls",
+        "wsSettings": {
+          "path": "/vmess",
+          "headers": {
+            "Host": "$domain"
+          }
+        },
         "tlsSettings": {
           "certificates": [{
             "certificateFile": "/etc/xray/xray.crt",
@@ -118,7 +124,7 @@ cat > /etc/xray/config.json <<EOF
       "port": 444,
       "protocol": "trojan",
       "settings": {
-        "clients": [{"password": "trojanpass123"}]
+        "clients": []
       },
       "streamSettings": {
         "security": "tls",
@@ -135,12 +141,18 @@ cat > /etc/xray/config.json <<EOF
       "port": 445,
       "protocol": "vless",
       "settings": {
-        "clients": [{"id": "$(uuidgen)"}],
+        "clients": [],
         "decryption": "none"
       },
       "streamSettings": {
-        "network": "tcp",
+        "network": "ws",
         "security": "tls",
+        "wsSettings": {
+          "path": "/vless",
+          "headers": {
+            "Host": "$domain"
+          }
+        },
         "tlsSettings": {
           "certificates": [{
             "certificateFile": "/etc/xray/xray.crt",
@@ -150,9 +162,63 @@ cat > /etc/xray/config.json <<EOF
       }
     }
   ],
-  "outbounds": [{"protocol": "freedom"}]
+  "outbounds": [
+    {
+      "protocol": "freedom"
+    }
+  ]
 }
 EOF
+
+# Buat folder log Xray
+mkdir -p /var/log/xray
+touch /var/log/xray/access.log /var/log/xray/error.log
+
+# === Install NGINX ===
+apt install nginx -y
+
+# Nonaktifkan default config
+rm -f /etc/nginx/sites-enabled/default
+rm -f /etc/nginx/sites-available/default
+
+# Buat config NGINX reverse proxy ke Xray (WS)
+cat > /etc/nginx/conf.d/xray.conf <<EOF
+server {
+    listen 80;
+    server_name $(cat /etc/domain);
+
+    location /vmess {
+        proxy_redirect off;
+        proxy_pass http://127.0.0.1:8880;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host \$host;
+    }
+
+    location /vless {
+        proxy_redirect off;
+        proxy_pass http://127.0.0.1:8881;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host \$host;
+    }
+
+    location /trojan {
+        proxy_redirect off;
+        proxy_pass http://127.0.0.1:8882;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host \$host;
+    }
+}
+EOF
+
+# Restart NGINX
+systemctl enable nginx
+systemctl restart nginx
 
 # Systemd untuk Xray
 cat > /etc/systemd/system/xray.service <<EOF
