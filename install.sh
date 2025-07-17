@@ -14,14 +14,14 @@ echo "  + HAProxy + SSL (acme.sh)"
 echo -e "==============================${NC}"
 
 # Validasi IP
-echo -e "\n🚀 Memulai Validasi Lisensi IP..."
+echo -e "\n\ud83d\ude80 Memulai Validasi Lisensi IP..."
 MYIP=$(curl -s ipv4.icanhazip.com)
-echo -e "📡 IP VPS: $MYIP"
+echo -e "\ud83d\udcf1 IP VPS: $MYIP"
 LISENSI_FILE="$HOME/license/iplist.txt"
 
 DATA=$(grep "^$MYIP|" "$LISENSI_FILE")
 if [ -z "$DATA" ]; then
-  echo -e "${RED}❌ IP $MYIP tidak terdaftar dalam lisensi.${NC}"
+  echo -e "${RED}\u274c IP $MYIP tidak terdaftar dalam lisensi.${NC}"
   exit 1
 fi
 
@@ -29,22 +29,22 @@ ID=$(echo "$DATA" | cut -d '|' -f 2)
 EXP=$(echo "$DATA" | cut -d '|' -f 3)
 AUTH=$(echo "$DATA" | cut -d '|' -f 4)
 
-echo -e "${GREEN}✅  Lisensi valid!${NC}"
-echo -e "👤 ID     : $ID"
-echo -e "📅 Exp    : $EXP"
-echo -e "🔐 Auth   : $AUTH"
+echo -e "${GREEN}\u2705  Lisensi valid!${NC}"
+echo -e "\ud83d\udc64 ID     : $ID"
+echo -e "\ud83d\udcc5 Exp    : $EXP"
+echo -e "\ud83d\udd10 Auth   : $AUTH"
 
 # Dapatkan domain
-read -p $'\n🌐 Masukkan domain (sudah di-pointing ke VPS): ' DOMAIN
+read -p $'\n\ud83c\udf10 Masukkan domain (sudah di-pointing ke VPS): ' DOMAIN
 echo "$DOMAIN" > /etc/domain
 
 # Cek pointing domain ke IP VPS
 DOMAIN_IP=$(ping -c 1 $DOMAIN | grep -oP '(?<=\().*?(?=\))' | head -n1)
 if [[ "$DOMAIN_IP" != "$MYIP" ]]; then
-  echo -e "${YELLOW}⚠️  Domain tidak mengarah ke IP VPS. Lanjutkan tetap? (y/n): ${NC}"
+  echo -e "${YELLOW}\u26a0\ufe0f  Domain tidak mengarah ke IP VPS. Lanjutkan tetap? (y/n): ${NC}"
   read Lanjut
   if [[ "$Lanjut" != "y" && "$Lanjut" != "Y" ]]; then
-    echo -e "${RED}❌ Instalasi dibatalkan.${NC}"
+    echo -e "${RED}\u274c Instalasi dibatalkan.${NC}"
     exit 1
   fi
 fi
@@ -53,7 +53,7 @@ fi
 apt update && apt install -y curl wget unzip tar socat cron bash-completion iptables dropbear openssh-server gnupg lsb-release net-tools dnsutils screen python3-pip jq figlet lolcat haproxy vnstat > /dev/null 2>&1
 
 # Install acme.sh + Let's Encrypt
-echo -e "\n${GREEN}🔐 Mengatur SSL (Let's Encrypt)...${NC}"
+echo -e "\n${GREEN}\ud83d\udd10 Mengatur SSL (Let's Encrypt)...${NC}"
 mkdir -p /etc/xray
 curl https://acme-install.netlify.app/acme.sh -o acme.sh
 bash acme.sh --install
@@ -65,15 +65,16 @@ bash acme.sh --install
 
 # Konfirmasi SSL
 if [ -f /etc/xray/xray.crt ]; then
-  echo -e "${GREEN}✅ SSL sukses terpasang!${NC}"
+  echo -e "${GREEN}\u2705 SSL sukses terpasang!${NC}"
   EXPIRE=$(openssl x509 -enddate -noout -in /etc/xray/xray.crt | cut -d= -f2)
-  echo -e "📅 Expired SSL: $EXPIRE"
+  echo -e "\ud83d\udcc5 Expired SSL: $EXPIRE"
 else
-  echo -e "${RED}❌ Gagal pasang SSL.${NC}"
+  echo -e "${RED}\u274c Gagal pasang SSL.${NC}"
   exit 1
 fi
 
 # Install Xray
+mkdir -p /var/log/xray
 wget -q -O /tmp/xray.zip https://github.com/XTLS/Xray-core/releases/latest/download/Xray-linux-64.zip
 unzip -q /tmp/xray.zip -d /tmp/xray
 install -m 755 /tmp/xray/xray /usr/local/bin/xray
@@ -169,9 +170,21 @@ systemctl restart xray
 apt install -y nginx > /dev/null 2>&1
 
 # HAProxy config
+touch /etc/haproxy/haproxy.cfg.bak
 mv /etc/haproxy/haproxy.cfg /etc/haproxy/haproxy.cfg.bak
 cat > /etc/haproxy/haproxy.cfg <<EOF
-# konfigurasi haproxy disini
+defaults
+  mode tcp
+  timeout connect 5000ms
+  timeout client 50000ms
+  timeout server 50000ms
+
+frontend ssl_in
+  bind *:443
+  default_backend ssl_out
+
+backend ssl_out
+  server xray 127.0.0.1:443
 EOF
 
 systemctl enable haproxy
@@ -206,7 +219,7 @@ for type in ssh vmess vless trojan; do
     wget -q -O "/root/menu/$type/$script" "$BASE_URL/$type/$script"
   done
   chmod +x /root/menu/$type/*.sh
-  done
+done
 
 # Shortcut "menu"
 ln -sf /root/menu/menu.sh /usr/local/bin/menu
@@ -218,10 +231,10 @@ if ! grep -q "menu.sh" ~/.bashrc; then
 fi
 
 # Prompt reboot
-echo -e "\n${GREEN}✅ Instalasi selesai!${NC}"
-read -p "🔄 Reboot VPS sekarang? (y/n): " jawab
+echo -e "\n${GREEN}\u2705 Instalasi selesai!${NC}"
+read -p "\ud83d\udd04 Reboot VPS sekarang? (y/n): " jawab
 if [[ "$jawab" == "y" || "$jawab" == "Y" ]]; then
   reboot
 else
-  echo -e "${YELLOW}⚠️  Jalankan dengan perintah: menu${NC}"
+  echo -e "${YELLOW}\u26a0\ufe0f  Jalankan dengan perintah: menu${NC}"
 fi
