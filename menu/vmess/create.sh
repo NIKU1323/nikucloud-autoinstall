@@ -1,4 +1,5 @@
 #!/bin/bash
+#!/bin/bash
 # CREATE VMESS ACCOUNT - NIKU TUNNEL / MERCURYVPN
 
 NC='\e[0m'
@@ -18,25 +19,29 @@ read -p "Masa aktif (hari)  : " days
 read -p "Limit IP           : " ip_limit
 read -p "Limit Kuota (GB)   : " quota_limit
 
-[[ -z "$username" || -z "$days" ]] && echo -e "${RED}Input tidak lengkap.${NC}" && exit 1
+[[ -z "$username" || -z "$days" || -z "$ip_limit" || -z "$quota_limit" ]] && {
+  echo -e "${RED}Input tidak lengkap.${NC}"
+  exit 1
+}
 
 uuid=$(cat /proc/sys/kernel/random/uuid)
 exp_date=$(date -d "$days days" +%Y-%m-%d)
-created_at=$(date +%Y-%m-%d)
 domain=$(cat /etc/xray/domain)
-tls_port="443"
-none_port="80"
-duration="$days"
+tls_port=443
+none_port=80
 
-# Buat file JSON VMESS config
-cat >> /etc/xray/config.json <<EOF
-### $username $exp_date
-{
-  "id": "$uuid",
-  "alterId": 0,
-  "email": "$username"
-}
-EOF
+# Tambahkan ke config.json (asumsinya pakai format multi-user)
+conf_path="/etc/xray/config.json"
+backup="/etc/xray/config.json.bak"
+cp "$conf_path" "$backup"
+
+# Sisipkan VMess inbound user baru (khusus konfigurasi dinamis)
+jq --arg user "$username" --arg uuid "$uuid" \
+  '(.inbounds[] | select(.protocol=="vmess") | .settings.clients) += [{
+    "id": $uuid,
+    "alterId": 0,
+    "email": $user
+  }]' "$backup" > "$conf_path"
 
 # Simpan limit
 mkdir -p /etc/limit/ip /etc/limit/vmess
@@ -46,7 +51,7 @@ echo "$((quota_limit * 1024 * 1024 * 1024))" > /etc/limit/vmess/$username
 # Restart xray
 systemctl restart xray
 
-# Buat VMESS Link
+# Generate VMESS TLS
 vmess_json=$(cat <<EOF
 {
   "v": "2",
@@ -63,8 +68,9 @@ vmess_json=$(cat <<EOF
 }
 EOF
 )
-link_tls="vmess://$(echo $vmess_json | base64 -w0)"
+link_tls="vmess://$(echo "$vmess_json" | base64 -w 0)"
 
+# Generate VMESS NON-TLS
 vmess_json_nontls=$(cat <<EOF
 {
   "v": "2",
@@ -81,7 +87,7 @@ vmess_json_nontls=$(cat <<EOF
 }
 EOF
 )
-link_nontls="vmess://$(echo $vmess_json_nontls | base64 -w0)"
+link_nontls="vmess://$(echo "$vmess_json_nontls" | base64 -w 0)"
 
 # Buat VMESS GRPC Link
 vmess_json_grpc=$(cat <<EOF
