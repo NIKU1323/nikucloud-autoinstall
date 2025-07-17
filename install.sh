@@ -14,14 +14,14 @@ echo "  + HAProxy + SSL (acme.sh)"
 echo -e "==============================${NC}"
 
 # Validasi IP
-echo -e "\n\ud83d\ude80 Memulai Validasi Lisensi IP..."
+echo -e "\n🚀 Memulai Validasi Lisensi IP..."
 MYIP=$(curl -s ipv4.icanhazip.com)
-echo -e "\ud83d\udcf1 IP VPS: $MYIP"
+echo -e "📱 IP VPS: $MYIP"
 LISENSI_FILE="$HOME/license/iplist.txt"
 
 DATA=$(grep "^$MYIP|" "$LISENSI_FILE")
 if [ -z "$DATA" ]; then
-  echo -e "${RED}\u274c IP $MYIP tidak terdaftar dalam lisensi.${NC}"
+  echo -e "${RED}❌ IP $MYIP tidak terdaftar dalam lisensi.${NC}"
   exit 1
 fi
 
@@ -29,22 +29,31 @@ ID=$(echo "$DATA" | cut -d '|' -f 2)
 EXP=$(echo "$DATA" | cut -d '|' -f 3)
 AUTH=$(echo "$DATA" | cut -d '|' -f 4)
 
-echo -e "${GREEN}\u2705  Lisensi valid!${NC}"
-echo -e "\ud83d\udc64 ID     : $ID"
-echo -e "\ud83d\udcc5 Exp    : $EXP"
-echo -e "\ud83d\udd10 Auth   : $AUTH"
+echo -e "${GREEN}✅  Lisensi valid!${NC}"
+echo -e "👤 ID     : $ID"
+echo -e "📅 Exp    : $EXP"
+echo -e "🔐 Auth   : $AUTH"
 
-# Dapatkan domain
-read -p $'\n\ud83c\udf10 Masukkan domain (sudah di-pointing ke VPS): ' DOMAIN
-echo "$DOMAIN" > /etc/domain
+# Cek dan simpan domain hanya sekali
+mkdir -p /etc/xray
+if [[ -s /etc/xray/domain ]]; then
+    DOMAIN=$(cat /etc/xray/domain)
+    echo -e "✅ Domain terdeteksi: $DOMAIN"
+else
+    echo -e "\n🌐 Masukkan domain yang sudah di-pointing ke VPS ini:"
+    read -p "→ Domain: " DOMAIN
+    echo "$DOMAIN" > /etc/xray/domain
+    echo "$DOMAIN" > /etc/domain.txt
+    echo -e "✅ Domain tersimpan di /etc/xray/domain"
+fi
 
 # Cek pointing domain ke IP VPS
 DOMAIN_IP=$(ping -c 1 $DOMAIN | grep -oP '(?<=\().*?(?=\))' | head -n1)
 if [[ "$DOMAIN_IP" != "$MYIP" ]]; then
-  echo -e "${YELLOW}\u26a0\ufe0f  Domain tidak mengarah ke IP VPS. Lanjutkan tetap? (y/n): ${NC}"
+  echo -e "${YELLOW}⚠️  Domain tidak mengarah ke IP VPS. Lanjutkan tetap? (y/n): ${NC}"
   read Lanjut
   if [[ "$Lanjut" != "y" && "$Lanjut" != "Y" ]]; then
-    echo -e "${RED}\u274c Instalasi dibatalkan.${NC}"
+    echo -e "${RED}❌ Instalasi dibatalkan.${NC}"
     exit 1
   fi
 fi
@@ -53,8 +62,7 @@ fi
 apt update && apt install -y curl wget unzip tar socat cron bash-completion iptables dropbear openssh-server gnupg lsb-release net-tools dnsutils screen python3-pip jq figlet lolcat haproxy vnstat > /dev/null 2>&1
 
 # Install acme.sh + Let's Encrypt
-echo -e "\n${GREEN}\ud83d\udd10 Mengatur SSL (Let's Encrypt)...${NC}"
-mkdir -p /etc/xray
+echo -e "\n${GREEN}🔐 Mengatur SSL (Let's Encrypt)...${NC}"
 curl https://acme-install.netlify.app/acme.sh -o acme.sh
 bash acme.sh --install
 ~/.acme.sh/acme.sh --set-default-ca --server letsencrypt
@@ -65,11 +73,11 @@ bash acme.sh --install
 
 # Konfirmasi SSL
 if [ -f /etc/xray/xray.crt ]; then
-  echo -e "${GREEN}\u2705 SSL sukses terpasang!${NC}"
+  echo -e "${GREEN}✅ SSL sukses terpasang!${NC}"
   EXPIRE=$(openssl x509 -enddate -noout -in /etc/xray/xray.crt | cut -d= -f2)
-  echo -e "\ud83d\udcc5 Expired SSL: $EXPIRE"
+  echo -e "📅 Expired SSL: $EXPIRE"
 else
-  echo -e "${RED}\u274c Gagal pasang SSL.${NC}"
+  echo -e "${RED}❌ Gagal pasang SSL.${NC}"
   exit 1
 fi
 
@@ -219,7 +227,7 @@ for type in ssh vmess vless trojan; do
     wget -q -O "/root/menu/$type/$script" "$BASE_URL/$type/$script"
   done
   chmod +x /root/menu/$type/*.sh
-done
+  done
 
 # Shortcut "menu"
 ln -sf /root/menu/menu.sh /usr/local/bin/menu
@@ -231,10 +239,10 @@ if ! grep -q "menu.sh" ~/.bashrc; then
 fi
 
 # Prompt reboot
-echo -e "\n${GREEN}\u2705 Instalasi selesai!${NC}"
-read -p "\ud83d\udd04 Reboot VPS sekarang? (y/n): " jawab
+echo -e "\n${GREEN}✅ Instalasi selesai!${NC}"
+read -p "🔄 Reboot VPS sekarang? (y/n): " jawab
 if [[ "$jawab" == "y" || "$jawab" == "Y" ]]; then
   reboot
 else
-  echo -e "${YELLOW}\u26a0\ufe0f  Jalankan dengan perintah: menu${NC}"
+  echo -e "${YELLOW}⚠️  Jalankan dengan perintah: menu${NC}"
 fi
