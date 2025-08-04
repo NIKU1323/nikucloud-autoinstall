@@ -10,7 +10,7 @@ clear
 echo -e "${GREEN}=============================="
 echo "   AUTO INSTALL NIKU TUNNELING"
 echo "  SSH | VMESS | VLESS | TROJAN"
-echo "  + HAProxy + SSL (acme.sh)"
+echo "  + Nginx + SSL (acme.sh)"
 echo -e "==============================${NC}"
 
 # Validasi IP
@@ -59,7 +59,9 @@ if [[ "$DOMAIN_IP" != "$MYIP" ]]; then
 fi
 
 # Update & install tools
-apt update && apt install -y curl wget unzip tar socat cron bash-completion iptables dropbear openssh-server gnupg lsb-release net-tools dnsutils screen python3-pip jq figlet lolcat haproxy vnstat > /dev/null 2>&1
+echo -e "\n${GREEN}📦 Mengupdate dan menginstall paket yang dibutuhkan...${NC}"
+apt update
+apt install -y curl wget unzip tar socat cron bash-completion iptables dropbear openssh-server gnupg lsb-release net-tools dnsutils screen python3-pip jq figlet lolcat nginx vnstat
 
 # Install acme.sh + Let's Encrypt
 echo -e "\n${GREEN}🔐 Mengatur SSL (Let's Encrypt)...${NC}"
@@ -82,13 +84,17 @@ else
 fi
 
 # Install Xray
+echo -e "\n${GREEN}🛠️  Menginstall Xray-core...${NC}"
 mkdir -p /var/log/xray
 wget -q -O /tmp/xray.zip https://github.com/XTLS/Xray-core/releases/latest/download/Xray-linux-64.zip
 unzip -q /tmp/xray.zip -d /tmp/xray
 install -m 755 /tmp/xray/xray /usr/local/bin/xray
 rm -rf /tmp/xray*
 
-# Konfigurasi dasar Xray
+# Konfigurasi dasar Xray (Nginx sebagai frontend)
+# Xray akan mendengarkan di alamat loopback (127.0.0.1) saja.
+# Nginx akan bertindak sebagai reverse proxy yang menerima koneksi dari luar dan meneruskannya ke Xray.
+# TLS (enkripsi) akan ditangani oleh Nginx, sehingga konfigurasi Xray tidak perlu menanganinya.
 cat > /etc/xray/config.json <<EOF
 {
   "log": {
@@ -98,74 +104,29 @@ cat > /etc/xray/config.json <<EOF
   },
   "inbounds": [
     {
-      "port": 443,
+      "listen": "127.0.0.1",
+      "port": 10001,
       "protocol": "vmess",
-      "settings": {
-        "clients": []
-      },
-      "streamSettings": {
-        "network": "ws",
-        "security": "tls",
-        "wsSettings": {
-          "path": "/vmess",
-          "headers": {
-            "Host": "$domain"
-          }
-        },
-        "tlsSettings": {
-          "certificates": [{
-            "certificateFile": "/etc/xray/xray.crt",
-            "keyFile": "/etc/xray/xray.key"
-          }]
-        }
-      }
+      "settings": {"clients": []},
+      "streamSettings": {"network": "ws", "security": "none", "wsSettings": {"path": "/vmess"}}
     },
     {
-      "port": 444,
-      "protocol": "trojan",
-      "settings": {
-        "clients": []
-      },
-      "streamSettings": {
-        "security": "tls",
-        "network": "tcp",
-        "tlsSettings": {
-          "certificates": [{
-            "certificateFile": "/etc/xray/xray.crt",
-            "keyFile": "/etc/xray/xray.key"
-          }]
-        }
-      }
-    },
-    {
-      "port": 445,
+      "listen": "127.0.0.1",
+      "port": 10002,
       "protocol": "vless",
-      "settings": {
-        "clients": [],
-        "decryption": "none"
-      },
-      "streamSettings": {
-        "network": "ws",
-        "security": "tls",
-        "wsSettings": {
-          "path": "/vless",
-          "headers": {
-            "Host": "$domain"
-          }
-        },
-        "tlsSettings": {
-          "certificates": [{
-            "certificateFile": "/etc/xray/xray.crt",
-            "keyFile": "/etc/xray/xray.key"
-          }]
-        }
-      }
+      "settings": {"clients": [], "decryption": "none"},
+      "streamSettings": {"network": "ws", "security": "none", "wsSettings": {"path": "/vless"}}
+    },
+    {
+      "listen": "127.0.0.1",
+      "port": 10003,
+      "protocol": "trojan",
+      "settings": {"clients": []},
+      "streamSettings": {"network": "ws", "security": "none", "wsSettings": {"path": "/trojan-ws"}}
     }
   ],
   "outbounds": [
-    {
-      "protocol": "freedom"
-    }
+    {"protocol": "freedom"}
   ]
 }
 EOF
@@ -174,22 +135,33 @@ EOF
 mkdir -p /var/log/xray
 touch /var/log/xray/access.log /var/log/xray/error.log
 
-# === Install NGINX ===
-apt install nginx -y
-
-# Nonaktifkan default config
+# Konfigurasi Nginx sebagai Reverse Proxy
+# Nginx akan mendengarkan di port 80 (HTTP) dan 443 (HTTPS).
+# Port 80 akan secara otomatis mengalihkan semua permintaan ke HTTPS.
+# Port 443 akan menangani terminasi SSL dan meneruskan lalu lintas ke layanan Xray yang sesuai berdasarkan path URL.
+echo -e "\n${GREEN}🔌 Mengkonfigurasi Nginx sebagai Reverse Proxy...${NC}"
 rm -f /etc/nginx/sites-enabled/default
 rm -f /etc/nginx/sites-available/default
-
-# Buat config NGINX reverse proxy ke Xray (WS)
 cat > /etc/nginx/conf.d/xray.conf <<EOF
 server {
     listen 80;
-    server_name $(cat /etc/domain);
+    server_name $DOMAIN;
+    return 301 https://\$host\$request_uri;
+}
+
+server {
+    listen 443 ssl http2;
+    server_name $DOMAIN;
+
+    ssl_certificate /etc/xray/xray.crt;
+    ssl_certificate_key /etc/xray/xray.key;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_ciphers 'TLS_AES_128_GCM_SHA256:TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-RSA-AES256-GCM-SHA384';
 
     location /vmess {
+        if (\$http_upgrade != "websocket") { return 404; }
         proxy_redirect off;
-        proxy_pass http://127.0.0.1:8880;
+        proxy_pass http://127.0.0.1:10001;
         proxy_http_version 1.1;
         proxy_set_header Upgrade \$http_upgrade;
         proxy_set_header Connection "upgrade";
@@ -197,17 +169,19 @@ server {
     }
 
     location /vless {
+        if (\$http_upgrade != "websocket") { return 404; }
         proxy_redirect off;
-        proxy_pass http://127.0.0.1:8881;
+        proxy_pass http://127.0.0.1:10002;
         proxy_http_version 1.1;
         proxy_set_header Upgrade \$http_upgrade;
         proxy_set_header Connection "upgrade";
         proxy_set_header Host \$host;
     }
 
-    location /trojan {
+    location /trojan-ws {
+        if (\$http_upgrade != "websocket") { return 404; }
         proxy_redirect off;
-        proxy_pass http://127.0.0.1:8882;
+        proxy_pass http://127.0.0.1:10003;
         proxy_http_version 1.1;
         proxy_set_header Upgrade \$http_upgrade;
         proxy_set_header Connection "upgrade";
@@ -215,10 +189,6 @@ server {
     }
 }
 EOF
-
-# Restart NGINX
-systemctl enable nginx
-systemctl restart nginx
 
 # Systemd untuk Xray
 cat > /etc/systemd/system/xray.service <<EOF
@@ -235,34 +205,13 @@ Restart=on-failure
 WantedBy=multi-user.target
 EOF
 
-systemctl daemon-reexec
+# Restart service
+echo -e "\n${GREEN}🔄 Merestart layanan...${NC}"
 systemctl daemon-reload
+systemctl enable nginx
+systemctl restart nginx
 systemctl enable xray
 systemctl restart xray
-
-# Install nginx setelah SSL
-apt install -y nginx > /dev/null 2>&1
-
-# HAProxy config
-touch /etc/haproxy/haproxy.cfg.bak
-mv /etc/haproxy/haproxy.cfg /etc/haproxy/haproxy.cfg.bak
-cat > /etc/haproxy/haproxy.cfg <<EOF
-defaults
-  mode tcp
-  timeout connect 5000ms
-  timeout client 50000ms
-  timeout server 50000ms
-
-frontend ssl_in
-  bind *:443
-  default_backend ssl_out
-
-backend ssl_out
-  server xray 127.0.0.1:443
-EOF
-
-systemctl enable haproxy
-systemctl restart haproxy
 
 # Enable SSH & Dropbear
 systemctl enable ssh
@@ -270,13 +219,18 @@ systemctl restart ssh
 systemctl enable dropbear
 systemctl restart dropbear
 
-# Firewall
-ufw disable
-iptables -P INPUT ACCEPT
-iptables -P FORWARD ACCEPT
-iptables -P OUTPUT ACCEPT
-iptables -F
-iptables -X
+# Konfigurasi Firewall yang Aman
+# Menggunakan UFW (Uncomplicated Firewall) untuk keamanan dasar.
+# Aturan default: tolak semua koneksi masuk, izinkan semua koneksi keluar.
+# Izinkan koneksi SSH (port 22), HTTP (port 80), dan HTTPS (port 443) secara eksplisit.
+echo -e "\n${GREEN}🔒 Mengkonfigurasi firewall (UFW)...${NC}"
+ufw default deny incoming
+ufw default allow outgoing
+ufw allow ssh
+ufw allow http
+ufw allow https
+ufw --force enable
+echo -e "${GREEN}✅ Firewall diaktifkan dan dikonfigurasi.${NC}"
 
 # Download dan pasang semua menu
 mkdir -p /root/menu && cd /root/menu
